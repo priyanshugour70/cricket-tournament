@@ -18,6 +18,37 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Added Integrations (Prisma/Postgres, S3, Mail)
+This sample project includes:
+- `src/lib/prisma.ts` (PrismaClient singleton)
+- `prisma/schema.prisma` (Postgres models)
+- `src/lib/aws-s3.ts` (S3 presigned PUT URL + buffer upload helper)
+- `src/lib/mail-utils.ts` (Nodemailer HTML email sender + Prisma logging)
+
+### 1) Environment variables
+Copy `.env.example` to `.env` and fill in values.
+
+Required for Postgres:
+- `DATABASE_URL`
+
+Required for S3 presigning:
+- `AWS_REGION`
+- `AWS_S3_BUCKET`
+
+Required for sending emails:
+- `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM`
+
+### 2) Prisma setup
+After creating your Postgres database, run:
+```bash
+pnpm prisma generate
+pnpm prisma migrate dev
+```
+
+### 3) API routes to test
+- `POST /api/mail/send` (sends an HTML email and logs it to `EmailLog`)
+- `POST /api/s3/presign` (returns a presigned PUT URL for uploading to S3)
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
