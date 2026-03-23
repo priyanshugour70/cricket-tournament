@@ -6,6 +6,25 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── Auth & RBAC Enums ──────────────────────────────────────────────────────
+
+enum SystemRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
+enum TournamentRole {
+  TOURNAMENT_OWNER
+  TOURNAMENT_ADMIN
+  TEAM_MANAGER
+  AUCTIONEER
+  SCORER
+  VIEWER
+}
+
+// ─── Domain Enums ────────────────────────────────────────────────────────────
+
 enum TournamentStatus {
   DRAFT
   REGISTRATION_OPEN
@@ -13,9 +32,11 @@ enum TournamentStatus {
   AUCTION_SCHEDULED
   AUCTION_IN_PROGRESS
   AUCTION_COMPLETED
+  SCHEDULE_READY
   LIVE
   COMPLETED
   CANCELLED
+  ARCHIVED
 }
 
 enum TournamentFormat {
@@ -23,6 +44,7 @@ enum TournamentFormat {
   T20
   ODI
   TEST
+  HUNDRED
 }
 
 enum RegistrationStatus {
@@ -87,6 +109,15 @@ enum PlayerAcquisitionType {
   REPLACEMENT
 }
 
+enum MatchStage {
+  LEAGUE
+  QUALIFIER_1
+  QUALIFIER_2
+  ELIMINATOR
+  SEMI_FINAL
+  FINAL
+}
+
 enum MatchStatus {
   SCHEDULED
   TOSS_PENDING
@@ -105,28 +136,168 @@ enum MatchResultType {
   ABANDONED
 }
 
+enum TossDecision {
+  BAT
+  BOWL
+}
+
+enum PointsTableEntryType {
+  WIN
+  LOSS
+  TIE
+  NO_RESULT
+  BONUS
+}
+
+enum InningsStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DECLARED
+}
+
+enum DismissalType {
+  BOWLED
+  CAUGHT
+  LBW
+  RUN_OUT
+  STUMPED
+  HIT_WICKET
+  RETIRED_HURT
+  RETIRED_OUT
+  OBSTRUCTING_FIELD
+  TIMED_OUT
+  HANDLED_BALL
+}
+
+enum ExtraType {
+  WIDE
+  NO_BALL
+  BYE
+  LEG_BYE
+  PENALTY
+}
+
+enum NotificationType {
+  REGISTRATION_SUBMITTED
+  REGISTRATION_APPROVED
+  REGISTRATION_REJECTED
+  AUCTION_STARTED
+  AUCTION_PLAYER_SOLD
+  MATCH_SCHEDULED
+  MATCH_STARTED
+  MATCH_COMPLETED
+  TEAM_CREATED
+  GENERAL
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  BOTH
+}
+
+// ─── Auth Models ─────────────────────────────────────────────────────────────
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String
+  firstName       String
+  lastName        String?
+  displayName     String
+  phone           String?
+  avatarUrl       String?
+  systemRole      SystemRole @default(USER)
+  emailVerified   Boolean    @default(false)
+  emailVerifiedAt DateTime?
+  isActive        Boolean    @default(true)
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+  loginCount      Int        @default(0)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  sessions           Session[]
+  tournamentAccesses UserTournamentAccess[]
+
+  @@index([email])
+  @@index([systemRole, isActive])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  token        String   @unique
+  refreshToken String?  @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model UserTournamentAccess {
+  id           String         @id @default(cuid())
+  userId       String
+  tournamentId String
+  role         TournamentRole
+  teamId       String?
+  grantedBy    String?
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tournamentId, role])
+  @@index([userId, isActive])
+  @@index([tournamentId, isActive])
+}
+
+// ─── Tournament ──────────────────────────────────────────────────────────────
+
 model Tournament {
   id                String           @id @default(cuid())
   code              String           @unique
   name              String
   shortName         String?
+  description       String?
+  logoUrl           String?
+  bannerUrl         String?
   season            Int
   format            TournamentFormat @default(T20)
   status            TournamentStatus @default(DRAFT)
   organizerName     String?
   organizerEmail    String?
+  organizerPhone    String?
   venueCity         String?
   country           String?
   timezone          String           @default("Asia/Kolkata")
   registrationOpen  DateTime?
   registrationClose DateTime?
+  auctionStartDate  DateTime?
   startsOn          DateTime?
   endsOn            DateTime?
   maxTeams          Int              @default(8)
   minSquadSize      Int              @default(15)
   maxSquadSize      Int              @default(25)
   overseasLimit     Int              @default(4)
-  pursePerTeam      Decimal          @db.Decimal(12, 2)
+  retentionLimit    Int              @default(5)
+  pursePerTeam      Decimal          @db.Decimal(14, 2)
+  matchOvers        Decimal          @default(20) @db.Decimal(5, 1)
+  powerplayOvers    Decimal          @default(6) @db.Decimal(5, 1)
+  pointsForWin      Decimal          @default(2) @db.Decimal(5, 2)
+  pointsForTie      Decimal          @default(1) @db.Decimal(5, 2)
+  pointsForNR       Decimal          @default(1) @db.Decimal(5, 2)
+  nrrEnabled        Boolean          @default(true)
+  isPublic          Boolean          @default(false)
   notes             String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -138,11 +309,16 @@ model Tournament {
   auctionBids         AuctionBid[]
   teamPurseLedgers    TeamPurseLedger[]
   teamSquadPlayers    TeamSquadPlayer[]
+  pointsTable         PointsTableEntry[]
+  userAccesses        UserTournamentAccess[]
 
   @@unique([name, season])
   @@index([status])
   @@index([season])
+  @@index([isPublic, status])
 }
+
+// ─── Team ────────────────────────────────────────────────────────────────────
 
 model Team {
   id             String     @id @default(cuid())
@@ -153,13 +329,17 @@ model Team {
   ownerName      String?
   managerName    String?
   coachName      String?
+  captainName    String?
   city           String?
   homeGround     String?
   logoUrl        String?
+  primaryColor   String?
+  secondaryColor String?
   status         TeamStatus @default(ACTIVE)
-  purseTotal     Decimal    @db.Decimal(12, 2)
-  purseSpent     Decimal    @default(0) @db.Decimal(12, 2)
-  purseRemaining Decimal    @default(0) @db.Decimal(12, 2)
+  purseTotal     Decimal    @db.Decimal(14, 2)
+  purseSpent     Decimal    @default(0) @db.Decimal(14, 2)
+  purseRemaining Decimal    @default(0) @db.Decimal(14, 2)
+  retainedCount  Int        @default(0)
   squadMin       Int        @default(15)
   squadMax       Int        @default(25)
   overseasMin    Int        @default(0)
@@ -174,13 +354,17 @@ model Team {
   purseLedgers  TeamPurseLedger[]
   squadPlayers  TeamSquadPlayer[]
   auctionBids   AuctionBid[]
-  matchesAsHome Match[]           @relation("HomeTeam")
-  matchesAsAway Match[]           @relation("AwayTeam")
+  matchesAsHome Match[]            @relation("HomeTeam")
+  matchesAsAway Match[]            @relation("AwayTeam")
+  matchesWon    Match[]            @relation("WinningTeam")
+  pointsEntries PointsTableEntry[]
 
   @@unique([tournamentId, code])
   @@unique([tournamentId, name])
   @@index([tournamentId, status])
 }
+
+// ─── Player ──────────────────────────────────────────────────────────────────
 
 model Player {
   id               String        @id @default(cuid())
@@ -189,6 +373,8 @@ model Player {
   lastName         String?
   displayName      String
   dateOfBirth      DateTime?
+  age              Int?
+  gender           String?
   nationality      String?
   state            String?
   city             String?
@@ -197,14 +383,20 @@ model Player {
   bowlingStyle     BowlingStyle?
   isOverseas       Boolean       @default(false)
   isWicketKeeper   Boolean       @default(false)
+  isCapped         Boolean       @default(false)
+  t20Matches       Int           @default(0)
+  odiMatches       Int           @default(0)
+  testMatches      Int           @default(0)
   battingRating    Int           @default(0)
   bowlingRating    Int           @default(0)
   fieldingRating   Int           @default(0)
   allRounderRating Int           @default(0)
-  reservePrice     Decimal?      @db.Decimal(12, 2)
-  basePrice        Decimal?      @db.Decimal(12, 2)
+  reservePrice     Decimal?      @db.Decimal(14, 2)
+  basePrice        Decimal?      @db.Decimal(14, 2)
   profilePhotoUrl  String?
   bio              String?
+  email            String?
+  phone            String?
   active           Boolean       @default(true)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
@@ -215,7 +407,11 @@ model Player {
 
   @@index([displayName])
   @@index([role])
+  @@index([nationality])
+  @@index([isCapped])
 }
+
+// ─── Tournament Player Registration ──────────────────────────────────────────
 
 model TournamentPlayerRegistration {
   id                 String             @id @default(cuid())
@@ -224,13 +420,18 @@ model TournamentPlayerRegistration {
   status             RegistrationStatus @default(SUBMITTED)
   registrationNumber String
   jerseyName         String?
+  jerseyNumber       Int?
   preferredRole      PlayerRole?
-  expectedPrice      Decimal?           @db.Decimal(12, 2)
+  expectedPrice      Decimal?           @db.Decimal(14, 2)
   fitnessCleared     Boolean            @default(false)
   documentsVerified  Boolean            @default(false)
+  medicalCleared     Boolean            @default(false)
   approvedBy         String?
   approvedAt         DateTime?
+  rejectedBy         String?
+  rejectedAt         DateTime?
   rejectionReason    String?
+  reviewNotes        String?
   finalShortlistRank Int?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -243,6 +444,8 @@ model TournamentPlayerRegistration {
   @@index([tournamentId, status])
 }
 
+// ─── Auction System ──────────────────────────────────────────────────────────
+
 model AuctionSeries {
   id                String              @id @default(cuid())
   tournamentId      String
@@ -251,9 +454,11 @@ model AuctionSeries {
   status            AuctionSeriesStatus @default(PLANNED)
   startsAt          DateTime?
   endsAt            DateTime?
-  minBidIncrement   Decimal             @default(10) @db.Decimal(12, 2)
+  minBidIncrement   Decimal             @default(10) @db.Decimal(14, 2)
   defaultBidTimeSec Int                 @default(30)
   maxBidTimeSec     Int                 @default(120)
+  totalPlayersSold  Int                 @default(0)
+  totalAmountSpent  Decimal             @default(0) @db.Decimal(14, 2)
   notes             String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
@@ -276,6 +481,8 @@ model AuctionRound {
   nominationOrder Json?
   startsAt        DateTime?
   endsAt          DateTime?
+  playersSold     Int              @default(0)
+  amountSpent     Decimal          @default(0) @db.Decimal(14, 2)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -293,7 +500,7 @@ model AuctionBid {
   tournamentId    String
   teamId          String
   playerId        String
-  bidAmount       Decimal  @db.Decimal(12, 2)
+  bidAmount       Decimal  @db.Decimal(14, 2)
   isWinningBid    Boolean  @default(false)
   isAutoBid       Boolean  @default(false)
   bidAt           DateTime @default(now())
@@ -311,15 +518,18 @@ model AuctionBid {
   @@index([tournamentId, isWinningBid])
 }
 
+// ─── Team Finance & Squad ────────────────────────────────────────────────────
+
 model TeamPurseLedger {
   id              String   @id @default(cuid())
   teamId          String
   tournamentId    String
-  amount          Decimal  @db.Decimal(12, 2)
+  amount          Decimal  @db.Decimal(14, 2)
   direction       String
   transactionType String
   referenceType   String?
   referenceId     String?
+  balanceAfter    Decimal? @db.Decimal(14, 2)
   remarks         String?
   createdAt       DateTime @default(now())
 
@@ -336,13 +546,15 @@ model TeamSquadPlayer {
   teamId            String
   playerId          String
   acquisitionType   PlayerAcquisitionType
-  acquisitionAmount Decimal?              @db.Decimal(12, 2)
+  acquisitionAmount Decimal?              @db.Decimal(14, 2)
   jerseyNumber      Int?
   isCaptain         Boolean               @default(false)
   isViceCaptain     Boolean               @default(false)
+  isOverseas        Boolean               @default(false)
   isActive          Boolean               @default(true)
   joinedAt          DateTime              @default(now())
   releasedAt        DateTime?
+  releaseReason     String?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
@@ -352,48 +564,194 @@ model TeamSquadPlayer {
 
   @@unique([tournamentId, playerId])
   @@index([teamId, isActive])
+  @@index([tournamentId, teamId])
 }
+
+// ─── Match ───────────────────────────────────────────────────────────────────
 
 model Match {
   id               String           @id @default(cuid())
   tournamentId     String
   matchNo          Int
-  stage            String           @default("LEAGUE")
+  stage            MatchStage       @default(LEAGUE)
+  groupName        String?
   homeTeamId       String
   awayTeamId       String
   venueName        String?
   city             String?
   scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
   tossWonByTeamId  String?
-  electedTo        String?
+  tossDecision     TossDecision?
   status           MatchStatus      @default(SCHEDULED)
   winningTeamId    String?
   resultType       MatchResultType?
+  resultSummary    String?
   winMarginRuns    Int?
   winMarginWickets Int?
   pointsHome       Decimal?         @db.Decimal(5, 2)
   pointsAway       Decimal?         @db.Decimal(5, 2)
   oversPerSide     Decimal          @default(20) @db.Decimal(5, 1)
+  umpire1          String?
+  umpire2          String?
+  thirdUmpire      String?
+  referee          String?
+  highlights       String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id])
-  homeTeam   Team       @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam   Team       @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  tournament  Tournament @relation(fields: [tournamentId], references: [id])
+  homeTeam    Team       @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    Team       @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  winningTeam Team?      @relation("WinningTeam", fields: [winningTeamId], references: [id])
+  innings     Innings[]
 
   @@unique([tournamentId, matchNo])
   @@index([tournamentId, status, scheduledAt])
+  @@index([tournamentId, stage])
 }
 
+// ─── Points Table ────────────────────────────────────────────────────────────
+
+model PointsTableEntry {
+  id           String   @id @default(cuid())
+  tournamentId String
+  teamId       String
+  played       Int      @default(0)
+  won          Int      @default(0)
+  lost         Int      @default(0)
+  tied         Int      @default(0)
+  noResult     Int      @default(0)
+  points       Decimal  @default(0) @db.Decimal(7, 2)
+  nrr          Decimal  @default(0) @db.Decimal(7, 4)
+  runsScored   Int      @default(0)
+  oversFaced   Decimal  @default(0) @db.Decimal(7, 1)
+  runsConceded Int      @default(0)
+  oversBowled  Decimal  @default(0) @db.Decimal(7, 1)
+  position     Int      @default(0)
+  groupName    String?
+  lastUpdated  DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  team       Team       @relation(fields: [teamId], references: [id])
+
+  @@unique([tournamentId, teamId])
+  @@index([tournamentId, points, nrr])
+}
+
+// ─── Innings & Ball-by-Ball ──────────────────────────────────────────────────
+
+model Innings {
+  id            String        @id @default(cuid())
+  matchId       String
+  inningsNo     Int
+  battingTeamId String
+  bowlingTeamId String
+  status        InningsStatus @default(NOT_STARTED)
+  totalRuns     Int           @default(0)
+  totalWickets  Int           @default(0)
+  totalOvers    Decimal       @default(0) @db.Decimal(5, 1)
+  totalBalls    Int           @default(0)
+  extras        Int           @default(0)
+  wides         Int           @default(0)
+  noBalls       Int           @default(0)
+  byes          Int           @default(0)
+  legByes       Int           @default(0)
+  penalties     Int           @default(0)
+  runRate       Decimal       @default(0) @db.Decimal(5, 2)
+  targetScore   Int?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  match      Match        @relation(fields: [matchId], references: [id])
+  balls      BallByBall[]
+  commentary Commentary[]
+
+  @@unique([matchId, inningsNo])
+  @@index([matchId])
+}
+
+model BallByBall {
+  id            String         @id @default(cuid())
+  inningsId     String
+  overNo        Int
+  ballNo        Int
+  batsmanId     String
+  bowlerId      String
+  nonStrikerId  String?
+  runs          Int            @default(0)
+  isExtra       Boolean        @default(false)
+  extraType     ExtraType?
+  extraRuns     Int            @default(0)
+  totalRuns     Int            @default(0)
+  isWicket      Boolean        @default(false)
+  dismissalType DismissalType?
+  dismissedId   String?
+  fielderId     String?
+  isFour        Boolean        @default(false)
+  isSix         Boolean        @default(false)
+  isDot         Boolean        @default(false)
+  isFreeHit     Boolean        @default(false)
+  ballSpeed     Decimal?       @db.Decimal(5, 1)
+  shotType      String?
+  createdAt     DateTime       @default(now())
+
+  innings Innings @relation(fields: [inningsId], references: [id])
+
+  @@unique([inningsId, overNo, ballNo])
+  @@index([inningsId, overNo])
+  @@index([batsmanId])
+  @@index([bowlerId])
+}
+
+model Commentary {
+  id          String   @id @default(cuid())
+  inningsId   String
+  overNo      Int
+  ballNo      Int?
+  text        String
+  isHighlight Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  innings Innings @relation(fields: [inningsId], references: [id])
+
+  @@index([inningsId, overNo])
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+model Notification {
+  id           String              @id @default(cuid())
+  userId       String?
+  tournamentId String?
+  type         NotificationType    @default(GENERAL)
+  channel      NotificationChannel @default(IN_APP)
+  title        String
+  message      String
+  link         String?
+  isRead       Boolean             @default(false)
+  readAt       DateTime?
+  emailSent    Boolean             @default(false)
+  emailSentAt  DateTime?
+  createdAt    DateTime            @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([tournamentId, createdAt])
+}
+
+// ─── Utility Models ──────────────────────────────────────────────────────────
+
 model EmailLog {
-  id        String   @id @default(cuid())
-  to        String
-  subject   String
-  html      String?
-  text      String?
-  status    String   @default("SENT")
-  error     String?
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  to           String
+  subject      String
+  html         String?
+  text         String?
+  status       String   @default("SENT")
+  error        String?
+  tournamentId String?
+  createdAt    DateTime @default(now())
 }
 
 model Asset {
@@ -402,5 +760,6 @@ model Asset {
   key         String   @unique
   contentType String?
   size        Int?
+  uploadedBy  String?
   createdAt   DateTime @default(now())
 }

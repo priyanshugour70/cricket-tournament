@@ -305,6 +305,31 @@ export async function listTournamentPlayers(tournamentId: string) {
   }
 }
 
+export async function updateTournamentStatus(tournamentId: string, payload: unknown) {
+  try {
+    const body = asRecord(payload);
+    const status = safeString(body.status);
+
+    if (!status) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "status is required") };
+    }
+
+    const existing = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!existing) {
+      return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Tournament not found") };
+    }
+
+    const updated = await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { status: status as TournamentDetails["status"] },
+      include: { _count: { select: { teams: true, playerRegistrations: true, matches: true } } },
+    });
+    return { status: 200, body: successResponse(mapTournamentDetails(updated), "Tournament status updated") };
+  } catch (error) {
+    return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to update tournament status")) };
+  }
+}
+
 export async function registerTournamentPlayer(tournamentId: string, payload: unknown) {
   try {
     const body = asRecord(payload);

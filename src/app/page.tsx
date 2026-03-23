@@ -1,209 +1,252 @@
-"use client";
+import Link from "next/link";
+import {
+  Trophy,
+  Users,
+  Gavel,
+  Calendar,
+  Shield,
+  BarChart3,
+  ChevronRight,
+  Zap,
+} from "lucide-react";
+import { Button } from "@/components/ui";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui";
 
-import { useState } from "react";
-import { useCreateS3Presign, useSendMail } from "@/hooks/use-integrations";
-import { getErrorMessage } from "@/types";
+const features = [
+  {
+    icon: Trophy,
+    title: "Tournament Management",
+    description:
+      "Create and manage multi-format cricket tournaments with flexible rules, schedules, and point systems.",
+  },
+  {
+    icon: Users,
+    title: "Player Registration",
+    description:
+      "Streamlined player registration with profile management, fitness clearance, and document verification.",
+  },
+  {
+    icon: Gavel,
+    title: "Live Auctions",
+    description:
+      "Real-time auction system with bid tracking, purse management, and team-wise budget controls.",
+  },
+  {
+    icon: Calendar,
+    title: "Match Scheduling",
+    description:
+      "Automated fixture generation across league, qualifiers, and knockout stages with venue management.",
+  },
+  {
+    icon: Shield,
+    title: "Team Management",
+    description:
+      "Full squad management with retention rules, overseas limits, and captain assignments.",
+  },
+  {
+    icon: BarChart3,
+    title: "Real-time Dashboard",
+    description:
+      "Live standings, net run rate calculations, and comprehensive tournament analytics at a glance.",
+  },
+];
 
-type ApiState = { ok: boolean; message: string } | null;
+const stats = [
+  { value: "2,400+", label: "Tournaments Hosted" },
+  { value: "85,000+", label: "Players Registered" },
+  { value: "12,000+", label: "Matches Played" },
+  { value: "150+", label: "Cities Worldwide" },
+];
 
-export default function Home() {
-  const [mailTo, setMailTo] = useState("test@example.com");
-  const [mailSubject, setMailSubject] = useState(
-    "Cricket Tournament - HTML email test",
-  );
-  const [mailMessageHtml, setMailMessageHtml] = useState(
-    `<p>Hello from <b>Next.js</b>!</p><p>This is a test email with HTML.</p>`,
-  );
-  const [mailFooterText, setMailFooterText] = useState(
-    "Thanks for checking the integration.",
-  );
-  const [mailState, setMailState] = useState<ApiState>(null);
-  const sendMail = useSendMail();
-
-  const [s3ContentType, setS3ContentType] = useState(
-    "application/octet-stream",
-  );
-  const [s3ExpiresInSeconds, setS3ExpiresInSeconds] = useState(900);
-  const [s3Key, setS3Key] = useState("");
-  const [s3State, setS3State] = useState<ApiState>(null);
-  const createS3Presign = useCreateS3Presign();
-
-  // Keep placeholders deterministic to avoid SSR/client hydration mismatches.
-  const previewKey = "uploads/frontend-demo";
-
-  async function onSendMail(e: React.FormEvent) {
-    e.preventDefault();
-    setMailState(null);
-    try {
-      const result = await sendMail.execute({
-        to: mailTo,
-        subject: mailSubject,
-        title: mailSubject,
-        messageHtml: mailMessageHtml,
-        footerText: mailFooterText,
-      });
-
-      setMailState({
-        ok: true,
-        message: `Email sent. messageId=${result.data?.messageId ?? "unknown"}`,
-      });
-    } catch (err) {
-      setMailState({ ok: false, message: getErrorMessage(err) });
-    }
-  }
-
-  async function onGetPresignUrl(e: React.FormEvent) {
-    e.preventDefault();
-    setS3State(null);
-    try {
-      const result = await createS3Presign.execute({
-        key: s3Key.trim() ? s3Key.trim() : undefined,
-        contentType: s3ContentType,
-        expiresInSeconds: s3ExpiresInSeconds,
-      });
-
-      setS3State({
-        ok: true,
-        message: `Presigned URL created for key=${result.data?.key ?? previewKey}`,
-      });
-
-      console.log("S3 presigned response:", result.data);
-    } catch (err) {
-      setS3State({ ok: false, message: getErrorMessage(err) });
-    }
-  }
-
+export default function LandingPage() {
   return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold">Cricket Tournament Integrations</h1>
-      <p className="mt-2 text-sm text-zinc-600">
-        Verify Prisma/Postgres, S3 presigning, and HTML email sending.
-      </p>
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <Link href="/" className="flex items-center gap-2">
+            <Trophy className="h-6 w-6 text-primary" />
+            <span className="text-lg font-bold tracking-tight">
+              CricketTournament Pro
+            </span>
+          </Link>
+          <nav className="flex items-center gap-3">
+            <Button variant="ghost" asChild>
+              <Link href="/auth/login">Login</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/auth/register">Get Started</Link>
+            </Button>
+          </nav>
+        </div>
+      </header>
 
-      <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-6">
-        <h2 className="text-lg font-semibold">1) Send HTML Email</h2>
-        <form onSubmit={onSendMail} className="mt-4 space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium">To</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2"
-              value={mailTo}
-              onChange={(e) => setMailTo(e.target.value)}
-              type="email"
-              required
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">Subject</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2"
-              value={mailSubject}
-              onChange={(e) => setMailSubject(e.target.value)}
-              type="text"
-              required
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">messageHtml</span>
-            <textarea
-              className="mt-1 h-28 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs"
-              value={mailMessageHtml}
-              onChange={(e) => setMailMessageHtml(e.target.value)}
-              required
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">footerText</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2"
-              value={mailFooterText}
-              onChange={(e) => setMailFooterText(e.target.value)}
-              type="text"
-            />
-          </label>
-
-          <button
-            className="w-full rounded-lg bg-black px-4 py-2 text-white disabled:opacity-60"
-            type="submit"
-            disabled={sendMail.isLoading}
-          >
-            {sendMail.isLoading ? "Sending..." : "Send Email"}
-          </button>
-        </form>
-
-        {mailState ? (
-          <p
-            className={`mt-4 text-sm ${
-              mailState.ok ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {mailState.message}
+      <section className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
+        <div className="mx-auto max-w-3xl">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-1.5 text-sm text-muted-foreground">
+            <Zap className="h-3.5 w-3.5" />
+            The complete cricket tournament platform
+          </div>
+          <h1 className="text-5xl font-bold leading-tight tracking-tight sm:text-6xl">
+            Manage Cricket Tournaments{" "}
+            <span className="text-muted-foreground">Like a Pro</span>
+          </h1>
+          <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
+            From player registrations and live auctions to match scheduling and
+            real-time dashboards — everything you need to run professional
+            cricket tournaments, all in one place.
           </p>
-        ) : null}
+          <div className="mt-10 flex items-center justify-center gap-4">
+            <Button size="lg" asChild>
+              <Link href="/auth/register">
+                Start Free
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <Link href="/tournaments">Browse Tournaments</Link>
+            </Button>
+          </div>
+        </div>
       </section>
 
-      <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-6">
-        <h2 className="text-lg font-semibold">2) Get S3 Presigned URL</h2>
-        <form onSubmit={onGetPresignUrl} className="mt-4 space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium">key (optional)</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs"
-              value={s3Key}
-              onChange={(e) => setS3Key(e.target.value)}
-              type="text"
-              placeholder={previewKey}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">contentType</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-xs"
-              value={s3ContentType}
-              onChange={(e) => setS3ContentType(e.target.value)}
-              type="text"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">expiresInSeconds</span>
-            <input
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2"
-              value={s3ExpiresInSeconds}
-              onChange={(e) => setS3ExpiresInSeconds(Number(e.target.value))}
-              type="number"
-              min={60}
-              max={3600}
-            />
-          </label>
-
-          <button
-            className="w-full rounded-lg bg-black px-4 py-2 text-white disabled:opacity-60"
-            type="submit"
-            disabled={createS3Presign.isLoading}
-          >
-            {createS3Presign.isLoading ? "Creating..." : "Create Presigned URL"}
-          </button>
-        </form>
-
-        {s3State ? (
-          <p
-            className={`mt-4 text-sm ${
-              s3State.ok ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {s3State.message}
-          </p>
-        ) : null}
-
-        <p className="mt-3 text-xs text-zinc-500">
-          The full presigned URL will be printed in the browser console.
-        </p>
+      <section className="border-t border-border bg-secondary/50 py-20">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="mb-12 text-center">
+            <h2 className="text-3xl font-bold tracking-tight">
+              Everything You Need
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              Powerful tools for every aspect of tournament management
+            </p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((feature) => (
+              <Card
+                key={feature.title}
+                className="transition-shadow hover:shadow-md"
+              >
+                <CardHeader>
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                    <feature.icon className="h-5 w-5 text-primary" />
+                  </div>
+                  <CardTitle>{feature.title}</CardTitle>
+                  <CardDescription className="leading-relaxed">
+                    {feature.description}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
+        </div>
       </section>
-    </main>
+
+      <section className="py-20">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="mb-12 text-center">
+            <h2 className="text-3xl font-bold tracking-tight">
+              Trusted by Cricket Communities
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              Powering tournaments across the globe
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-8 lg:grid-cols-4">
+            {stats.map((stat) => (
+              <div key={stat.label} className="text-center">
+                <p className="text-4xl font-bold tracking-tight">
+                  {stat.value}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {stat.label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-border bg-primary py-20 text-primary-foreground">
+        <div className="mx-auto max-w-3xl px-6 text-center">
+          <h2 className="text-3xl font-bold tracking-tight">
+            Ready to Host Your Tournament?
+          </h2>
+          <p className="mt-4 text-primary-foreground/70">
+            Join thousands of organizers who trust CricketTournament Pro to
+            deliver seamless tournament experiences.
+          </p>
+          <div className="mt-8 flex items-center justify-center gap-4">
+            <Button
+              size="lg"
+              variant="secondary"
+              asChild
+            >
+              <Link href="/auth/register">Create Free Account</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-border py-12">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-primary" />
+                <span className="font-semibold">CricketTournament Pro</span>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                The complete platform for organizing and managing professional
+                cricket tournaments of any scale.
+              </p>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Platform</h3>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <Link href="/tournaments" className="hover:text-foreground">
+                    Tournaments
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/auth/register" className="hover:text-foreground">
+                    Sign Up
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/auth/login" className="hover:text-foreground">
+                    Login
+                  </Link>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Features</h3>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>Auction System</li>
+                <li>Match Scheduling</li>
+                <li>Team Management</li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold">Company</h3>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>About</li>
+                <li>Contact</li>
+                <li>Privacy Policy</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-10 border-t border-border pt-6 text-center text-sm text-muted-foreground">
+            &copy; {new Date().getFullYear()} CricketTournament Pro. All rights
+            reserved.
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }
