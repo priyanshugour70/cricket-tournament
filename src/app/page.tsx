@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useCreateS3Presign, useSendMail } from "@/hooks/use-integrations";
+import { getErrorMessage } from "@/types";
 
 type ApiState = { ok: boolean; message: string } | null;
 
@@ -16,7 +18,7 @@ export default function Home() {
     "Thanks for checking the integration.",
   );
   const [mailState, setMailState] = useState<ApiState>(null);
-  const [mailBusy, setMailBusy] = useState(false);
+  const sendMail = useSendMail();
 
   const [s3ContentType, setS3ContentType] = useState(
     "application/octet-stream",
@@ -24,72 +26,50 @@ export default function Home() {
   const [s3ExpiresInSeconds, setS3ExpiresInSeconds] = useState(900);
   const [s3Key, setS3Key] = useState("");
   const [s3State, setS3State] = useState<ApiState>(null);
-  const [s3Busy, setS3Busy] = useState(false);
+  const createS3Presign = useCreateS3Presign();
 
   // Keep placeholders deterministic to avoid SSR/client hydration mismatches.
   const previewKey = "uploads/frontend-demo";
 
   async function onSendMail(e: React.FormEvent) {
     e.preventDefault();
-    setMailBusy(true);
     setMailState(null);
     try {
-      const res = await fetch("/api/mail/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: mailTo,
-          subject: mailSubject,
-          title: mailSubject,
-          messageHtml: mailMessageHtml,
-          footerText: mailFooterText,
-        }),
+      const result = await sendMail.execute({
+        to: mailTo,
+        subject: mailSubject,
+        title: mailSubject,
+        messageHtml: mailMessageHtml,
+        footerText: mailFooterText,
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? "Request failed");
 
       setMailState({
         ok: true,
-        message: `Email sent. messageId=${data?.messageId ?? "unknown"}`,
+        message: `Email sent. messageId=${result.data?.messageId ?? "unknown"}`,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setMailState({ ok: false, message });
-    } finally {
-      setMailBusy(false);
+      setMailState({ ok: false, message: getErrorMessage(err) });
     }
   }
 
   async function onGetPresignUrl(e: React.FormEvent) {
     e.preventDefault();
-    setS3Busy(true);
     setS3State(null);
     try {
-      const res = await fetch("/api/s3/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: s3Key.trim() ? s3Key.trim() : undefined,
-          contentType: s3ContentType,
-          expiresInSeconds: s3ExpiresInSeconds,
-        }),
+      const result = await createS3Presign.execute({
+        key: s3Key.trim() ? s3Key.trim() : undefined,
+        contentType: s3ContentType,
+        expiresInSeconds: s3ExpiresInSeconds,
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? "Request failed");
 
       setS3State({
         ok: true,
-        message: `Presigned URL created for key=${data?.key ?? previewKey}`,
+        message: `Presigned URL created for key=${result.data?.key ?? previewKey}`,
       });
 
-      console.log("S3 presigned response:", data);
+      console.log("S3 presigned response:", result.data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setS3State({ ok: false, message });
-    } finally {
-      setS3Busy(false);
+      setS3State({ ok: false, message: getErrorMessage(err) });
     }
   }
 
@@ -148,9 +128,9 @@ export default function Home() {
           <button
             className="w-full rounded-lg bg-black px-4 py-2 text-white disabled:opacity-60"
             type="submit"
-            disabled={mailBusy}
+            disabled={sendMail.isLoading}
           >
-            {mailBusy ? "Sending..." : "Send Email"}
+            {sendMail.isLoading ? "Sending..." : "Send Email"}
           </button>
         </form>
 
@@ -204,9 +184,9 @@ export default function Home() {
           <button
             className="w-full rounded-lg bg-black px-4 py-2 text-white disabled:opacity-60"
             type="submit"
-            disabled={s3Busy}
+            disabled={createS3Presign.isLoading}
           >
-            {s3Busy ? "Creating..." : "Create Presigned URL"}
+            {createS3Presign.isLoading ? "Creating..." : "Create Presigned URL"}
           </button>
         </form>
 

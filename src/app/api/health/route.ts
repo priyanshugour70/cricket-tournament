@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { getHealthResponse } from "@/services/server/health.service";
 
 export async function GET() {
-  return NextResponse.json({ ok: true, now: new Date().toISOString() });
+  return NextResponse.json(getHealthResponse());
 }
 
