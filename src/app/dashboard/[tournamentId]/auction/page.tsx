@@ -27,23 +27,10 @@ type AuctionSeries = {
   id: string;
   name: string;
   status: string;
-  rounds: AuctionRound[];
-};
-
-type AuctionRound = {
-  id: string;
-  roundNumber: number;
-  status: string;
-  basePrice?: number;
-  bids: Bid[];
-};
-
-type Bid = {
-  id: string;
-  amount: number;
-  team: { id: string; name: string };
-  player: { id: string; displayName: string };
-  status: string;
+  sequenceNo: number;
+  roundCount: number;
+  totalPlayersSold: number;
+  totalAmountSpent: string;
 };
 
 type Team = { id: string; name: string };
@@ -84,7 +71,7 @@ export default function AuctionPage({
   const fetchData = useCallback(async () => {
     try {
       const [sRes, tRes, pRes] = await Promise.all([
-        fetch(`/api/tournaments/${tournamentId}/auction-series`, {
+        fetch(`/api/tournaments/${tournamentId}/auction/series`, {
           headers: authHeaders(),
         }),
         fetch(`/api/tournaments/${tournamentId}/teams`, {
@@ -104,9 +91,10 @@ export default function AuctionPage({
       if (sData.success) setSeries(sData.data ?? []);
       if (tData.success) setTeams(tData.data ?? []);
       if (pData.success) {
-        const mapped = (pData.data ?? []).map(
-          (r: { player: Player }) => r.player,
-        );
+        const mapped = (pData.data ?? []).map((r: { playerId: string; displayName: string }) => ({
+          id: r.playerId,
+          displayName: r.displayName,
+        }));
         setPlayers(mapped);
       }
     } catch {
@@ -125,11 +113,14 @@ export default function AuctionPage({
     setSavingSeries(true);
     try {
       const res = await fetch(
-        `/api/tournaments/${tournamentId}/auction-series`,
+        `/api/tournaments/${tournamentId}/auction/series`,
         {
           method: "POST",
           headers: authHeaders(),
-          body: JSON.stringify({ name: seriesName }),
+          body: JSON.stringify({
+            name: seriesName,
+            sequenceNo: (series.at(-1)?.sequenceNo ?? 0) + 1,
+          }),
         },
       );
       const data = await res.json();
@@ -225,62 +216,24 @@ export default function AuctionPage({
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {s.rounds.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No rounds yet.
-                  </p>
-                ) : (
-                  s.rounds.map((round) => (
-                    <div
-                      key={round.id}
-                      className="rounded-lg border border-border p-4"
-                    >
-                      <div className="mb-3 flex items-center justify-between">
-                        <p className="text-sm font-medium">
-                          Round {round.roundNumber}
-                        </p>
-                        <Badge
-                          variant="secondary"
-                          className={statusColor[round.status] ?? ""}
-                        >
-                          {round.status}
-                        </Badge>
-                      </div>
-                      {round.bids.length > 0 && (
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Player</TableHead>
-                              <TableHead>Team</TableHead>
-                              <TableHead className="text-right">
-                                Amount
-                              </TableHead>
-                              <TableHead>Status</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {round.bids.map((bid) => (
-                              <TableRow key={bid.id}>
-                                <TableCell className="font-medium">
-                                  {bid.player.displayName}
-                                </TableCell>
-                                <TableCell>{bid.team.name}</TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {(bid.amount / 100).toFixed(2)} Cr
-                                </TableCell>
-                                <TableCell>
-                                  <Badge variant="secondary">
-                                    {bid.status}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      )}
-                    </div>
-                  ))
-                )}
+                <div className="grid gap-3 rounded-lg border border-border p-4 text-sm md:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Sequence</p>
+                    <p className="font-medium">#{s.sequenceNo}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Rounds</p>
+                    <p className="font-medium">{s.roundCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Players sold</p>
+                    <p className="font-medium">{s.totalPlayersSold}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Amount spent</p>
+                    <p className="font-medium">{s.totalAmountSpent}</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ))}
