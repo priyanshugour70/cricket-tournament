@@ -35,9 +35,12 @@ export interface TournamentAccessItem {
 export interface AuthResponse {
   user: AuthUser;
   token: string;
+  /** Present after login/register/refresh; omitted from GET /api/auth/me */
+  refreshToken?: string;
   tournamentAccesses: TournamentAccessItem[];
 }
 
 export type LoginResponse = APIResponse<AuthResponse>;
 export type RegisterResponse = APIResponse<AuthResponse>;
 export type MeResponse = APIResponse<AuthResponse>;
+export type RefreshResponse = APIResponse<AuthResponse>;

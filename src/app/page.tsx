@@ -10,12 +10,14 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { MarketingHeader } from "@/components/layouts/marketing-header";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
 } from "@/components/ui";
+import { LiveTournaments } from "@/components/live-tournaments";
 
 const features = [
   {
@@ -66,24 +68,7 @@ const stats = [
 export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <Trophy className="h-6 w-6 text-primary" />
-            <span className="text-lg font-bold tracking-tight">
-              CricketTournament Pro
-            </span>
-          </Link>
-          <nav className="flex items-center gap-3">
-            <Button variant="ghost" asChild>
-              <Link href="/auth/login">Login</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/auth/register">Get Started</Link>
-            </Button>
-          </nav>
-        </div>
-      </header>
+      <MarketingHeader />
 
       <section className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
         <div className="mx-auto max-w-3xl">
@@ -144,6 +129,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      <LiveTournaments />
 
       <section className="py-20">
         <div className="mx-auto max-w-6xl px-6">

@@ -17,8 +17,41 @@ export async function signAccessToken(payload: TokenPayload): Promise<string> {
   return new SignJWT(payload as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("7d")
+    .setExpirationTime("1h")
     .sign(getSecret());
+}
+
+export interface RefreshTokenPayload {
+  userId: string;
+  sessionId: string;
+}
+
+export async function signRefreshToken(
+  payload: RefreshTokenPayload,
+): Promise<string> {
+  return new SignJWT(payload as unknown as Record<string, unknown>)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(getSecret());
+}
+
+export async function verifyRefreshToken(
+  token: string,
+): Promise<RefreshTokenPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, getSecret());
+    const p = payload as unknown as Record<string, unknown>;
+    if (
+      typeof p.userId === "string" &&
+      typeof p.sessionId === "string"
+    ) {
+      return { userId: p.userId, sessionId: p.sessionId };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function verifyAccessToken(

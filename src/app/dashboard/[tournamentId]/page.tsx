@@ -37,10 +37,10 @@ type Match = {
   id: string;
   matchNo: number;
   status: string;
-  scheduledAt?: string;
-  homeTeam: { id: string; name: string };
-  awayTeam: { id: string; name: string };
-  resultSummary?: string;
+  scheduledAt?: string | null;
+  homeTeamName: string;
+  awayTeamName: string;
+  resultSummary?: string | null;
 };
 
 function authHeaders(): Record<string, string> {
@@ -232,9 +232,9 @@ export default function OverviewPage({
                 >
                   <div className="min-w-0">
                     <div className="text-sm">
-                      <span className="font-medium">{m.homeTeam.name}</span>
+                      <span className="font-medium">{m.homeTeamName}</span>
                       <span className="mx-2 text-muted-foreground">vs</span>
-                      <span className="font-medium">{m.awayTeam.name}</span>
+                      <span className="font-medium">{m.awayTeamName}</span>
                     </div>
                     {m.resultSummary && (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">

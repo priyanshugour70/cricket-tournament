@@ -5,6 +5,8 @@ import {
   getSessionFromRequest,
   hashPassword,
   signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
 } from "@/lib/auth";
 import {
   ErrorCodes,
@@ -74,13 +76,41 @@ async function buildAuthResponse(
     systemRole: string;
   },
   token: string,
+  refreshToken?: string,
 ): Promise<AuthResponse> {
   const tournamentAccesses = await fetchTournamentAccesses(user.id);
-  return {
+  const base: AuthResponse = {
     user: mapAuthUser(user),
     token,
     tournamentAccesses,
   };
+  if (refreshToken) return { ...base, refreshToken };
+  return base;
+}
+
+async function createSessionForUser(user: {
+  id: string;
+  email: string;
+  systemRole: string;
+}): Promise<{ token: string; refreshToken: string }> {
+  const token = await signAccessToken({
+    userId: user.id,
+    email: user.email,
+    systemRole: user.systemRole,
+  });
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const session = await prisma.session.create({
+    data: { userId: user.id, token, expiresAt },
+  });
+  const refreshToken = await signRefreshToken({
+    userId: user.id,
+    sessionId: session.id,
+  });
+  await prisma.session.update({
+    where: { id: session.id },
+    data: { refreshToken },
+  });
+  return { token, refreshToken };
 }
 
 export async function registerUser(payload: unknown) {
@@ -127,21 +157,9 @@ export async function registerUser(payload: unknown) {
       data: { email, passwordHash, firstName, lastName, displayName, phone },
     });
 
-    const token = await signAccessToken({
-      userId: user.id,
-      email: user.email,
-      systemRole: user.systemRole,
-    });
+    const { token, refreshToken } = await createSessionForUser(user);
 
-    await prisma.session.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    const authResponse = await buildAuthResponse(user, token);
+    const authResponse = await buildAuthResponse(user, token, refreshToken);
     return { status: 201, body: successResponse(authResponse, "Registration successful") };
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -191,21 +209,9 @@ export async function loginUser(payload: unknown) {
       data: { lastLoginAt: new Date(), loginCount: { increment: 1 } },
     });
 
-    const token = await signAccessToken({
-      userId: user.id,
-      email: user.email,
-      systemRole: user.systemRole,
-    });
+    const { token, refreshToken } = await createSessionForUser(user);
 
-    await prisma.session.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    const authResponse = await buildAuthResponse(user, token);
+    const authResponse = await buildAuthResponse(user, token, refreshToken);
     return { status: 200, body: successResponse(authResponse, "Login successful") };
   } catch (error) {
     return {
@@ -244,6 +250,109 @@ export async function getCurrentUser(req: Request) {
       body: errorResponse(
         ErrorCodes.INTERNAL_ERROR,
         getErrorMessage(error, "Failed to fetch user"),
+      ),
+    };
+  }
+}
+
+export async function refreshAccessToken(payload: unknown) {
+  try {
+    const body = asRecord(payload);
+    const refreshToken = safeString(body.refreshToken);
+    if (!refreshToken) {
+      return {
+        status: 400,
+        body: errorResponse(ErrorCodes.VALIDATION_ERROR, "refreshToken is required"),
+      };
+    }
+
+    const decoded = await verifyRefreshToken(refreshToken);
+    if (!decoded) {
+      return {
+        status: 401,
+        body: errorResponse(ErrorCodes.INVALID_TOKEN, "Invalid refresh token"),
+      };
+    }
+
+    const session = await prisma.session.findFirst({
+      where: {
+        id: decoded.sessionId,
+        userId: decoded.userId,
+        refreshToken,
+      },
+    });
+
+    if (!session || session.expiresAt < new Date()) {
+      return {
+        status: 401,
+        body: errorResponse(ErrorCodes.TOKEN_EXPIRED, "Session expired. Please sign in again."),
+      };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId, isActive: true },
+    });
+    if (!user) {
+      return {
+        status: 401,
+        body: errorResponse(ErrorCodes.UNAUTHORIZED, "User not found or inactive"),
+      };
+    }
+
+    const newAccess = await signAccessToken({
+      userId: user.id,
+      email: user.email,
+      systemRole: user.systemRole,
+    });
+
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { token: newAccess },
+    });
+
+    const authResponse = await buildAuthResponse(user, newAccess, refreshToken);
+    return { status: 200, body: successResponse(authResponse, "Token refreshed") };
+  } catch (error) {
+    return {
+      status: 500,
+      body: errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        getErrorMessage(error, "Unable to refresh session"),
+      ),
+    };
+  }
+}
+
+export async function logoutUser(req: Request, payload: unknown) {
+  try {
+    const body = asRecord(payload);
+    const refreshFromBody = safeString(body.refreshToken);
+    const authHeader = req.headers.get("authorization");
+    const accessToken =
+      authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+    if (refreshFromBody) {
+      const decoded = await verifyRefreshToken(refreshFromBody);
+      if (decoded) {
+        await prisma.session.deleteMany({
+          where: {
+            id: decoded.sessionId,
+            userId: decoded.userId,
+            refreshToken: refreshFromBody,
+          },
+        });
+      }
+    } else if (accessToken) {
+      await prisma.session.deleteMany({ where: { token: accessToken } });
+    }
+
+    return { status: 200, body: successResponse({ ok: true }, "Logged out") };
+  } catch (error) {
+    return {
+      status: 500,
+      body: errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        getErrorMessage(error, "Logout failed"),
       ),
     };
   }

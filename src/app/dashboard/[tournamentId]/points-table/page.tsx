@@ -17,16 +17,19 @@ import {
   TableCell,
 } from "@/components/ui";
 
-type PointsEntry = {
+type PointsTableRow = {
+  id: string;
+  teamId: string;
+  teamName: string;
+  teamCode: string;
   position: number;
-  team: { id: string; name: string; code: string };
   played: number;
   won: number;
   lost: number;
   tied: number;
   noResult: number;
-  points: number;
-  netRunRate: number;
+  points: string;
+  nrr: string;
 };
 
 function authHeaders(): Record<string, string> {
@@ -45,7 +48,7 @@ export default function PointsTablePage({
   params: Promise<{ tournamentId: string }>;
 }) {
   const { tournamentId } = use(params);
-  const [entries, setEntries] = useState<PointsEntry[]>([]);
+  const [entries, setEntries] = useState<PointsTableRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchPoints = useCallback(async () => {
@@ -55,7 +58,24 @@ export default function PointsTablePage({
         { headers: authHeaders() },
       );
       const data = await res.json();
-      if (data.success) setEntries(data.data ?? []);
+      if (data.success && Array.isArray(data.data)) {
+        setEntries(
+          data.data.map((row: Record<string, unknown>) => ({
+            id: String(row.id ?? ""),
+            teamId: String(row.teamId ?? ""),
+            teamName: String(row.teamName ?? ""),
+            teamCode: String(row.teamCode ?? ""),
+            position: Number(row.position ?? 0),
+            played: Number(row.played ?? 0),
+            won: Number(row.won ?? 0),
+            lost: Number(row.lost ?? 0),
+            tied: Number(row.tied ?? 0),
+            noResult: Number(row.noResult ?? 0),
+            points: String(row.points ?? "0"),
+            nrr: String(row.nrr ?? "0"),
+          })),
+        );
+      }
     } catch {
       /* empty */
     } finally {
@@ -107,9 +127,12 @@ export default function PointsTablePage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {entries.map((entry, i) => (
+              {entries.map((entry, i) => {
+                const nrrNum = Number.parseFloat(entry.nrr);
+                const nrrSafe = Number.isFinite(nrrNum) ? nrrNum : 0;
+                return (
                 <TableRow
-                  key={entry.team.id}
+                  key={entry.id || entry.teamId}
                   className={i < 4 ? "bg-green-50/50" : ""}
                 >
                   <TableCell className="text-center font-bold tabular-nums">
@@ -118,9 +141,9 @@ export default function PointsTablePage({
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-xs font-bold text-primary">
-                        {entry.team.code}
+                        {entry.teamCode.slice(0, 3).toUpperCase()}
                       </div>
-                      <span className="font-medium">{entry.team.name}</span>
+                      <span className="font-medium">{entry.teamName}</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-center tabular-nums">
@@ -142,11 +165,12 @@ export default function PointsTablePage({
                     {entry.points}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {entry.netRunRate >= 0 ? "+" : ""}
-                    {entry.netRunRate.toFixed(3)}
+                    {nrrSafe >= 0 ? "+" : ""}
+                    {nrrSafe.toFixed(3)}
                   </TableCell>
                 </TableRow>
-              ))}
+              );
+              })}
             </TableBody>
           </Table>
         </Card>

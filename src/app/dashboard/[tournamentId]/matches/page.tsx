@@ -27,12 +27,11 @@ type Match = {
   matchNo: number;
   stage: string;
   status: string;
-  scheduledAt?: string;
-  venueName?: string;
-  homeTeam: { id: string; name: string };
-  awayTeam: { id: string; name: string };
-  winningTeam?: { id: string; name: string };
-  resultSummary?: string;
+  scheduledAt?: string | null;
+  venueName?: string | null;
+  homeTeamName: string;
+  awayTeamName: string;
+  resultSummary?: string | null;
 };
 
 function authHeaders(): Record<string, string> {
@@ -283,9 +282,9 @@ export default function MatchesPage({
                     {m.matchNo}
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium">{m.homeTeam.name}</span>
+                    <span className="font-medium">{m.homeTeamName}</span>
                     <span className="mx-1.5 text-muted-foreground">vs</span>
-                    <span className="font-medium">{m.awayTeam.name}</span>
+                    <span className="font-medium">{m.awayTeamName}</span>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {m.venueName ?? "—"}

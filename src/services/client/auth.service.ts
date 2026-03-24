@@ -5,6 +5,7 @@ import type {
   LoginRequest,
   LoginResponse,
   MeResponse,
+  RefreshResponse,
   RegisterRequest,
   RegisterResponse,
 } from "@/types/api/auth";
@@ -31,4 +32,26 @@ export async function getMeRequest(token: string): Promise<MeResponse> {
     throw new Error(getErrorMessage(json, "Request failed"));
   }
   return json;
+}
+
+export async function refreshTokenRequest(
+  refreshToken: string,
+): Promise<RefreshResponse> {
+  return apiPost<AuthResponse, { refreshToken: string }>("/api/auth/refresh", {
+    refreshToken,
+  });
+}
+
+export async function logoutRequest(
+  accessToken: string | null,
+  refreshToken: string | null,
+): Promise<void> {
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ refreshToken: refreshToken ?? undefined }),
+  });
 }

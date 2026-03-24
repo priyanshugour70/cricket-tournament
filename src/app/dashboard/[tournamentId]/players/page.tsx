@@ -23,20 +23,91 @@ import {
   TableCell,
 } from "@/components/ui";
 
-type PlayerRegistration = {
-  id: string;
-  status: string;
+type TournamentPlayerRow = {
+  registrationId: string;
   registrationNumber: string;
-  jerseyName?: string;
-  player: {
-    id: string;
-    displayName: string;
-    role: string;
-    battingStyle?: string;
-    bowlingStyle?: string;
-    isOverseas: boolean;
-  };
+  status: string;
+  playerId: string;
+  displayName: string;
+  role: string;
+  battingStyle: string | null;
+  bowlingStyle: string | null;
+  isOverseas: boolean;
+  expectedPrice: string | null;
+  createdAt: string;
 };
+
+function normalizeTournamentPlayerRow(raw: unknown): TournamentPlayerRow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const nested =
+    r.player && typeof r.player === "object"
+      ? (r.player as Record<string, unknown>)
+      : null;
+
+  const registrationId =
+    typeof r.registrationId === "string"
+      ? r.registrationId
+      : typeof r.id === "string"
+        ? r.id
+        : "";
+  if (!registrationId) return null;
+
+  const displayName =
+    typeof r.displayName === "string"
+      ? r.displayName
+      : typeof nested?.displayName === "string"
+        ? nested.displayName
+        : "";
+
+  const role =
+    typeof r.role === "string"
+      ? r.role
+      : typeof nested?.role === "string"
+        ? nested.role
+        : "BATTER";
+
+  const isOverseas =
+    typeof r.isOverseas === "boolean"
+      ? r.isOverseas
+      : Boolean(nested?.isOverseas);
+
+  return {
+    registrationId,
+    registrationNumber:
+      typeof r.registrationNumber === "string" ? r.registrationNumber : "",
+    status: typeof r.status === "string" ? r.status : "SUBMITTED",
+    playerId:
+      typeof r.playerId === "string"
+        ? r.playerId
+        : typeof nested?.id === "string"
+          ? nested.id
+          : "",
+    displayName,
+    role,
+    battingStyle:
+      typeof r.battingStyle === "string" || r.battingStyle === null
+        ? (r.battingStyle as string | null)
+        : typeof nested?.battingStyle === "string" || nested?.battingStyle === null
+          ? (nested.battingStyle as string | null)
+          : null,
+    bowlingStyle:
+      typeof r.bowlingStyle === "string" || r.bowlingStyle === null
+        ? (r.bowlingStyle as string | null)
+        : typeof nested?.bowlingStyle === "string" || nested?.bowlingStyle === null
+          ? (nested.bowlingStyle as string | null)
+          : null,
+    isOverseas,
+    expectedPrice:
+      typeof r.expectedPrice === "string" || r.expectedPrice === null
+        ? (r.expectedPrice as string | null)
+        : null,
+    createdAt:
+      typeof r.createdAt === "string"
+        ? r.createdAt
+        : new Date().toISOString(),
+  };
+}
 
 function authHeaders(): Record<string, string> {
   const token =
@@ -71,7 +142,7 @@ export default function PlayersPage({
   params: Promise<{ tournamentId: string }>;
 }) {
   const { tournamentId } = use(params);
-  const [players, setPlayers] = useState<PlayerRegistration[]>([]);
+  const [players, setPlayers] = useState<TournamentPlayerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -82,7 +153,15 @@ export default function PlayersPage({
         headers: authHeaders(),
       });
       const data = await res.json();
-      if (data.success) setPlayers(data.data ?? []);
+      if (data.success && Array.isArray(data.data)) {
+        const rows = data.data
+          .map(normalizeTournamentPlayerRow)
+          .filter(
+            (x: TournamentPlayerRow | null): x is TournamentPlayerRow =>
+              x !== null,
+          );
+        setPlayers(rows);
+      }
     } catch {
       /* empty */
     } finally {
@@ -94,15 +173,15 @@ export default function PlayersPage({
     fetchPlayers();
   }, [fetchPlayers]);
 
-  async function handleApproval(registrationIds: string[], approve: boolean) {
-    setActionLoading(registrationIds[0]);
+  async function handleApproval(registrationId: string, approve: boolean) {
+    setActionLoading(registrationId);
     try {
       await fetch(`/api/tournaments/${tournamentId}/registrations/approve`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          registrationIds,
-          action: approve ? "APPROVED" : "REJECTED",
+          registrationId,
+          action: approve ? "APPROVE" : "REJECT",
         }),
       });
       fetchPlayers();
@@ -171,18 +250,18 @@ export default function PlayersPage({
             </TableHeader>
             <TableBody>
               {filtered.map((reg) => (
-                <TableRow key={reg.id}>
+                <TableRow key={reg.registrationId}>
                   <TableCell className="font-mono text-xs">
                     {reg.registrationNumber}
                   </TableCell>
                   <TableCell className="font-medium">
-                    {reg.player.displayName}
+                    {reg.displayName}
                   </TableCell>
                   <TableCell className="text-sm">
-                    {reg.player.role.replace(/_/g, " ")}
+                    {reg.role.replace(/_/g, " ")}
                   </TableCell>
                   <TableCell>
-                    {reg.player.isOverseas ? (
+                    {reg.isOverseas ? (
                       <Badge variant="outline">Overseas</Badge>
                     ) : (
                       <span className="text-sm text-muted-foreground">
@@ -202,11 +281,11 @@ export default function PlayersPage({
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={actionLoading === reg.id}
-                          onClick={() => handleApproval([reg.id], true)}
+                          disabled={actionLoading === reg.registrationId}
+                          onClick={() => handleApproval(reg.registrationId, true)}
                           title="Approve"
                         >
-                          {actionLoading === reg.id ? (
+                          {actionLoading === reg.registrationId ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -215,8 +294,8 @@ export default function PlayersPage({
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={actionLoading === reg.id}
-                          onClick={() => handleApproval([reg.id], false)}
+                          disabled={actionLoading === reg.registrationId}
+                          onClick={() => handleApproval(reg.registrationId, false)}
                           title="Reject"
                         >
                           <XCircle className="h-4 w-4 text-red-500" />

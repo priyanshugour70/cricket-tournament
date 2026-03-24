@@ -114,11 +114,6 @@ function mapCommentaryItem(item: {
   };
 }
 
-const inningsInclude = {
-  battingTeam: { select: { name: true } },
-  bowlingTeam: { select: { name: true } },
-} as const;
-
 export async function listInnings(matchId: string) {
   try {
     const match = await prisma.match.findUnique({
@@ -126,9 +121,6 @@ export async function listInnings(matchId: string) {
       include: {
         innings: {
           orderBy: [{ inningsNo: "asc" }],
-          include: {
-            ...inningsInclude,
-          },
         },
         homeTeam: { select: { id: true, name: true } },
         awayTeam: { select: { id: true, name: true } },
