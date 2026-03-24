@@ -304,6 +304,13 @@ export default function TournamentDetailPage() {
                 <span className="text-border">|</span>
                 <span>{tournament.code}</span>
               </div>
+              <div className="mt-4">
+                <Button asChild size="sm">
+                  <Link href={`/tournaments/${id}/register`}>
+                    Register Yourself as Player
+                  </Link>
+                </Button>
+              </div>
             </div>
             <div className="flex flex-col items-end gap-1 text-sm text-muted-foreground">
               <span className="flex items-center gap-1.5">

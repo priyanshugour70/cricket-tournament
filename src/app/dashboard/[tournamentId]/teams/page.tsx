@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from "react";
 import { use } from "react";
+import Link from "next/link";
 import { Plus, Loader2, Users } from "lucide-react";
 import {
   Button,
@@ -220,7 +221,14 @@ export default function TeamsPage({
             <TableBody>
               {teams.map((team) => (
                 <TableRow key={team.id}>
-                  <TableCell className="font-medium">{team.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/dashboard/${tournamentId}/teams/${team.id}`}
+                      className="hover:underline"
+                    >
+                      {team.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {team.code}
                   </TableCell>

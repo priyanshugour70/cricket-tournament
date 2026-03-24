@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { use } from "react";
+import Link from "next/link";
 import {
   Users,
   CheckCircle2,
@@ -255,7 +256,12 @@ export default function PlayersPage({
                     {reg.registrationNumber}
                   </TableCell>
                   <TableCell className="font-medium">
-                    {reg.displayName}
+                    <Link
+                      href={`/dashboard/${tournamentId}/players/${reg.playerId}`}
+                      className="hover:underline"
+                    >
+                      {reg.displayName}
+                    </Link>
                   </TableCell>
                   <TableCell className="text-sm">
                     {reg.role.replace(/_/g, " ")}

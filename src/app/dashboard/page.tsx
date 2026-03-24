@@ -29,8 +29,8 @@ export default function DashboardPage() {
     }
   }, [isLoading, isAuthenticated, router]);
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     router.push("/auth/login");
   }
 
@@ -77,7 +77,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           {isAdmin && (
             <Button asChild>
-              <Link href="/tournaments">
+              <Link href="/dashboard/tournaments">
                 <Plus className="h-4 w-4" />
                 Create Tournament
               </Link>
@@ -115,7 +115,7 @@ export default function DashboardPage() {
               </p>
               {isAdmin && (
                 <Button className="mt-4" asChild>
-                  <Link href="/tournaments">
+                  <Link href="/dashboard/tournaments">
                     <Plus className="h-4 w-4" />
                     Create Tournament
                   </Link>
