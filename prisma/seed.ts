@@ -128,7 +128,7 @@ async function main() {
       auctionStartDate: new Date("2026-01-15T10:00:00Z"),
       startsOn: new Date("2026-03-22T14:00:00Z"),
       endsOn: new Date("2026-05-30T20:00:00Z"),
-      maxTeams: 10,
+      maxTeams: 8,
       minSquadSize: 18,
       maxSquadSize: 25,
       overseasLimit: 4,
@@ -456,8 +456,8 @@ async function main() {
       minBidIncrement: 25,
       defaultBidTimeSec: 30,
       maxBidTimeSec: 120,
-      totalPlayersSold: 20,
-      totalAmountSpent: 9750,
+      totalPlayersSold: 24,
+      totalAmountSpent: 12400,
       notes: "Day 1 & 2 mega auction — 8 teams participated",
     },
   });
@@ -489,7 +489,7 @@ async function main() {
     data: { auctionSeriesId: megaAuction.id, roundNo: 3, name: "Uncapped Players", type: "UNCAPPED", maxPlayers: 30, playersSold: 4, amountSpent: 1000, startsAt: new Date("2026-01-17T10:00:00Z"), endsAt: new Date("2026-01-17T14:00:00Z") },
   });
   const megaR4 = await prisma.auctionRound.create({
-    data: { auctionSeriesId: megaAuction.id, roundNo: 4, name: "Accelerated Round", type: "ACCELERATED", maxPlayers: 15, playersSold: 2, amountSpent: 500, startsAt: new Date("2026-01-17T14:30:00Z"), endsAt: new Date("2026-01-17T18:00:00Z") },
+    data: { auctionSeriesId: megaAuction.id, roundNo: 4, name: "Accelerated Round", type: "ACCELERATED", maxPlayers: 15, playersSold: 6, amountSpent: 3150, startsAt: new Date("2026-01-17T14:30:00Z"), endsAt: new Date("2026-01-17T18:00:00Z") },
   });
 
   await prisma.auctionRound.create({
@@ -549,6 +549,10 @@ async function main() {
     B(megaR4.id, 1, 23, 1100, true),  // CSK buys Rashid 11 Cr
     B(megaR4.id, 2, 21, 900, true),   // RCB buys Head 9 Cr
     B(megaR4.id, 3, 24, 800, true),   // KKR buys Starc 8 Cr
+    B(megaR4.id, 4, 20, 1100, true),  // DC buys Cummins 11 Cr
+    B(megaR4.id, 5, 25, 500, true),   // RR buys Williamson 5 Cr
+    B(megaR4.id, 6, 26, 600, true),   // SRH buys Livingstone 6 Cr
+    B(megaR4.id, 7, 27, 450, true),   // PBKS buys Boult 4.5 Cr
   ];
 
   await Promise.all(bidData.map((b) => prisma.auctionBid.create({ data: b })));
@@ -652,6 +656,13 @@ async function main() {
   await Promise.all(
     ledgerEntries.map((e) => prisma.teamPurseLedger.create({ data: e })),
   );
+
+  for (const [teamIdx, spent] of purseSpends) {
+    await prisma.team.update({
+      where: { id: iplTeams[teamIdx].id },
+      data: { purseSpent: spent, purseRemaining: 12000 - spent },
+    });
+  }
 
   // ── Matches (8) ─────────────────────────────────────────────────────────
   const matchDefs = [
@@ -897,6 +908,18 @@ async function main() {
     },
   });
 
+  // Match 5 (LIVE): CSK batting — partial innings in progress
+  const inn1_m5 = await prisma.innings.create({
+    data: {
+      matchId: matches[4].id, inningsNo: 1,
+      battingTeamId: iplTeams[1].id, bowlingTeamId: iplTeams[2].id,
+      status: "IN_PROGRESS", totalRuns: 65, totalWickets: 1,
+      totalOvers: 8, totalBalls: 48, extras: 4,
+      wides: 2, noBalls: 1, byes: 0, legByes: 1, penalties: 0,
+      runRate: 8.13,
+    },
+  });
+
   // ── BallByBall (30 balls — first 5 overs of Match 1 Innings 1) ─────────
   const runSeq = [0, 1, 4, 2, 0, 6, 1, 0, 1, 4, 0, 2, 1, 6, 0, 1, 2, 0, 4, 1, 0, 0, 1, 6, 1, 2, 0, 4, 1, 0];
   const batPairs = [[players[1].id, players[4].id], [players[4].id, players[23].id], [players[23].id, players[1].id]];
@@ -1042,7 +1065,9 @@ async function main() {
     },
   });
 
-  // ── MatchPlayingXI (Match 1 — MI vs CSK, 3 per team) ───────────────────
+  // ── MatchPlayingXI (Match 1 — MI vs CSK, 3 per team for demo purposes)
+  // Note: Real matches require 11 per team via the API (validated by setPlayingXI).
+  // Seed inserts directly, bypassing service validation, for minimal demo data.
   const playingXIData = [
     // MI batting lineup (team index 0)
     { matchId: matches[0].id, teamId: iplTeams[0].id, playerId: players[0].id, slotNo: 1, role: "BATTER", isCaptain: true, isViceCaptain: false, isWicketKeeper: false },
@@ -1071,7 +1096,7 @@ async function main() {
   console.log(`  Squad Players:          ${squadData.length}`);
   console.log(`  Purse Ledger Entries:   ${ledgerEntries.length}`);
   console.log(`  Matches:                ${matches.length}`);
-  console.log("  Innings:                8");
+  console.log("  Innings:                9");
   console.log(`  Ball-by-Ball:           ${ballData.length}`);
   console.log(`  Commentary:             ${commentaryData.length}`);
   console.log(`  Points Table:           ${pointsData.length}`);

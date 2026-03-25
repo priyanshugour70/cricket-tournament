@@ -27,15 +27,30 @@ export interface TournamentListItem {
 }
 
 export interface TournamentDetails extends TournamentListItem {
+  description: string | null;
+  logoUrl: string | null;
+  bannerUrl: string | null;
   organizerName: string | null;
   organizerEmail: string | null;
+  organizerPhone: string | null;
   venueCity: string | null;
   country: string | null;
   timezone: string;
+  registrationOpen: string | null;
+  registrationClose: string | null;
+  auctionStartDate: string | null;
   maxTeams: number;
   minSquadSize: number;
   maxSquadSize: number;
   overseasLimit: number;
+  retentionLimit: number;
+  matchOvers: string;
+  powerplayOvers: string;
+  pointsForWin: string;
+  pointsForTie: string;
+  pointsForNR: string;
+  nrrEnabled: boolean;
+  isPublic: boolean;
   notes: string | null;
 }
 

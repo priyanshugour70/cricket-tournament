@@ -273,6 +273,17 @@ export async function placeBid(tournamentId: string, payload: unknown) {
         }
       }
 
+      const existingWinning = await tx.auctionBid.findFirst({
+        where: {
+          auctionSeriesId: activeSeries.id,
+          playerId: request.playerId,
+          isWinningBid: true,
+        },
+      });
+      if (existingWinning) {
+        throw new Error("ALREADY_SOLD");
+      }
+
       return tx.auctionBid.create({
         data: {
           tournamentId,
@@ -304,6 +315,9 @@ export async function placeBid(tournamentId: string, payload: unknown) {
       }
       if (error.message === "ROUND_NOT_IN_SERIES") {
         return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Auction round does not belong to the active series") };
+      }
+      if (error.message === "ALREADY_SOLD") {
+        return { status: 409, body: errorResponse(ErrorCodes.ALREADY_EXISTS, "This player has already been sold in this auction series") };
       }
     }
     return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to place bid")) };

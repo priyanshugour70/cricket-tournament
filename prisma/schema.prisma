@@ -67,12 +67,17 @@ enum PlayerRole {
 enum BowlingStyle {
   RIGHT_ARM_FAST
   RIGHT_ARM_MEDIUM
+  RIGHT_ARM_MEDIUM_FAST
   LEFT_ARM_FAST
   LEFT_ARM_MEDIUM
+  LEFT_ARM_MEDIUM_FAST
   RIGHT_ARM_OFF_SPIN
   LEFT_ARM_ORTHODOX
   RIGHT_ARM_LEG_SPIN
   LEFT_ARM_WRIST_SPIN
+  SLOW_LEFT_ARM_ORTHODOX
+  SLOW_RIGHT_ARM_OFF_SPIN
+  DOES_NOT_BOWL
 }
 
 enum BattingStyle {
@@ -111,10 +116,13 @@ enum PlayerAcquisitionType {
 }
 
 enum MatchStage {
+  GROUP_STAGE
   LEAGUE
+  SUPER_FOUR
   QUALIFIER_1
   QUALIFIER_2
   ELIMINATOR
+  PLAYOFF
   SEMI_FINAL
   FINAL
 }
@@ -169,6 +177,8 @@ enum DismissalType {
   OBSTRUCTING_FIELD
   TIMED_OUT
   HANDLED_BALL
+  MANKAD
+  HIT_THE_BALL_TWICE
 }
 
 enum ExtraType {
@@ -222,6 +232,7 @@ model User {
   sessions           Session[]
   tournamentAccesses UserTournamentAccess[]
   linkedPlayer       Player?
+  notifications      Notification[]
 
   @@index([email])
   @@index([systemRole, isActive])
@@ -336,6 +347,7 @@ model Tournament {
   pointsTable         PointsTableEntry[]
   userAccesses        UserTournamentAccess[]
   settings            TournamentSettings?
+  notifications       Notification[]
 
   @@unique([name, season])
   @@index([status])
@@ -374,7 +386,7 @@ model Team {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   purseLedgers  TeamPurseLedger[]
   squadPlayers  TeamSquadPlayer[]
@@ -383,6 +395,7 @@ model Team {
   matchesAsAway Match[]            @relation("AwayTeam")
   matchesWon    Match[]            @relation("WinningTeam")
   pointsEntries PointsTableEntry[]
+  playingXI     MatchPlayingXI[]
 
   @@unique([tournamentId, code])
   @@unique([tournamentId, name])
@@ -427,10 +440,13 @@ model Player {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  user          User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
-  registrations TournamentPlayerRegistration[]
-  auctionBids   AuctionBid[]
-  squadEntries  TeamSquadPlayer[]
+  user           User?                          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  registrations  TournamentPlayerRegistration[]
+  auctionBids    AuctionBid[]
+  squadEntries   TeamSquadPlayer[]
+  playingXI      MatchPlayingXI[]
+  ballsAsBatsman BallByBall[]                   @relation("BallBatsman")
+  ballsAsBowler  BallByBall[]                   @relation("BallBowler")
 
   @@index([displayName])
   @@index([role])
@@ -463,12 +479,13 @@ model TournamentPlayerRegistration {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   player     Player     @relation(fields: [playerId], references: [id])
 
   @@unique([tournamentId, playerId])
   @@unique([tournamentId, registrationNumber])
   @@index([tournamentId, status])
+  @@index([playerId])
 }
 
 // ─── Auction System ──────────────────────────────────────────────────────────
@@ -490,7 +507,7 @@ model AuctionSeries {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
-  tournament Tournament     @relation(fields: [tournamentId], references: [id])
+  tournament Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   rounds     AuctionRound[]
   bids       AuctionBid[]
 
@@ -538,30 +555,45 @@ model AuctionBid {
   auctionRound  AuctionRound? @relation(fields: [auctionRoundId], references: [id])
   team          Team          @relation(fields: [teamId], references: [id])
   player        Player        @relation(fields: [playerId], references: [id])
-  tournament    Tournament    @relation(fields: [tournamentId], references: [id])
+  tournament    Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@index([auctionSeriesId, playerId, bidAt])
   @@index([teamId, bidAt])
   @@index([tournamentId, isWinningBid])
 }
 
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+}
+
+enum LedgerTransactionType {
+  INITIAL_ALLOCATION
+  AUCTION_PURCHASE
+  RETENTION_DEDUCTION
+  RELEASE_REFUND
+  PENALTY
+  BONUS
+  ADJUSTMENT
+}
+
 // ─── Team Finance & Squad ────────────────────────────────────────────────────
 
 model TeamPurseLedger {
-  id              String   @id @default(cuid())
+  id              String                @id @default(cuid())
   teamId          String
   tournamentId    String
-  amount          Decimal  @db.Decimal(14, 2)
-  direction       String
-  transactionType String
+  amount          Decimal               @db.Decimal(14, 2)
+  direction       LedgerDirection
+  transactionType LedgerTransactionType
   referenceType   String?
   referenceId     String?
-  balanceAfter    Decimal? @db.Decimal(14, 2)
+  balanceAfter    Decimal?              @db.Decimal(14, 2)
   remarks         String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime              @default(now())
 
-  team       Team       @relation(fields: [teamId], references: [id])
-  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@index([teamId, createdAt])
   @@index([tournamentId, createdAt])
@@ -585,8 +617,8 @@ model TeamSquadPlayer {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id])
-  team       Team       @relation(fields: [teamId], references: [id])
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   player     Player     @relation(fields: [playerId], references: [id])
 
   @@unique([tournamentId, playerId])
@@ -628,11 +660,12 @@ model Match {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  tournament  Tournament @relation(fields: [tournamentId], references: [id])
-  homeTeam    Team       @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam    Team       @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  winningTeam Team?      @relation("WinningTeam", fields: [winningTeamId], references: [id])
+  tournament  Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  homeTeam    Team             @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    Team             @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  winningTeam Team?            @relation("WinningTeam", fields: [winningTeamId], references: [id])
   innings     Innings[]
+  playingXI   MatchPlayingXI[]
 
   @@unique([tournamentId, matchNo])
   @@index([tournamentId, status, scheduledAt])
@@ -660,11 +693,12 @@ model PointsTableEntry {
   groupName    String?
   lastUpdated  DateTime @default(now())
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id])
-  team       Team       @relation(fields: [teamId], references: [id])
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@unique([tournamentId, teamId])
   @@index([tournamentId, points, nrr])
+  @@index([tournamentId, position])
 }
 
 // ─── Innings & Ball-by-Ball ──────────────────────────────────────────────────
@@ -691,7 +725,7 @@ model Innings {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  match      Match        @relation(fields: [matchId], references: [id])
+  match      Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
   balls      BallByBall[]
   commentary Commentary[]
 
@@ -724,12 +758,15 @@ model BallByBall {
   shotType      String?
   createdAt     DateTime       @default(now())
 
-  innings Innings @relation(fields: [inningsId], references: [id])
+  innings Innings @relation(fields: [inningsId], references: [id], onDelete: Cascade)
+  batsman Player  @relation("BallBatsman", fields: [batsmanId], references: [id])
+  bowler  Player  @relation("BallBowler", fields: [bowlerId], references: [id])
 
   @@unique([inningsId, overNo, ballNo])
   @@index([inningsId, overNo])
   @@index([batsmanId])
   @@index([bowlerId])
+  @@index([inningsId, batsmanId])
 }
 
 model Commentary {
@@ -741,7 +778,7 @@ model Commentary {
   isHighlight Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  innings Innings @relation(fields: [inningsId], references: [id])
+  innings Innings @relation(fields: [inningsId], references: [id], onDelete: Cascade)
 
   @@index([inningsId, overNo])
 }
@@ -762,6 +799,9 @@ model Notification {
   emailSent    Boolean             @default(false)
   emailSentAt  DateTime?
   createdAt    DateTime            @default(now())
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tournament Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead, createdAt])
   @@index([tournamentId, createdAt])
@@ -804,6 +844,10 @@ model MatchPlayingXI {
   isViceCaptain  Boolean  @default(false)
   isWicketKeeper Boolean  @default(false)
   createdAt      DateTime @default(now())
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, teamId, playerId])
   @@unique([matchId, teamId, slotNo])

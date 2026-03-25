@@ -1,5 +1,6 @@
 import type { SystemRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { invalidateRbacCache } from "@/lib/rbac.server";
 import {
   ErrorCodes,
   errorResponse,
@@ -87,6 +88,8 @@ export async function putRbacMatrix(payload: unknown) {
         }
       }
     });
+
+    invalidateRbacCache();
 
     return getRbacMatrix();
   } catch (error) {

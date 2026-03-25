@@ -70,22 +70,42 @@ function mapTournamentDetails(item: {
   id: string; code: string; name: string; shortName: string | null; season: number;
   status: TournamentDetails["status"]; format: TournamentDetails["format"];
   startsOn: Date | null; endsOn: Date | null; pursePerTeam: Prisma.Decimal; createdAt: Date;
-  organizerName: string | null; organizerEmail: string | null; venueCity: string | null;
-  country: string | null; timezone: string; maxTeams: number; minSquadSize: number;
-  maxSquadSize: number; overseasLimit: number; notes: string | null;
+  description: string | null; logoUrl: string | null; bannerUrl: string | null;
+  organizerName: string | null; organizerEmail: string | null; organizerPhone: string | null;
+  venueCity: string | null; country: string | null; timezone: string;
+  registrationOpen: Date | null; registrationClose: Date | null; auctionStartDate: Date | null;
+  maxTeams: number; minSquadSize: number; maxSquadSize: number; overseasLimit: number;
+  retentionLimit: number; matchOvers: Prisma.Decimal; powerplayOvers: Prisma.Decimal;
+  pointsForWin: Prisma.Decimal; pointsForTie: Prisma.Decimal; pointsForNR: Prisma.Decimal;
+  nrrEnabled: boolean; isPublic: boolean; notes: string | null;
   _count: { teams: number; playerRegistrations: number; matches: number };
 }): TournamentDetails {
   return {
     ...mapTournamentListItem(item),
+    description: item.description,
+    logoUrl: item.logoUrl,
+    bannerUrl: item.bannerUrl,
     organizerName: item.organizerName,
     organizerEmail: item.organizerEmail,
+    organizerPhone: item.organizerPhone,
     venueCity: item.venueCity,
     country: item.country,
     timezone: item.timezone,
+    registrationOpen: item.registrationOpen?.toISOString() ?? null,
+    registrationClose: item.registrationClose?.toISOString() ?? null,
+    auctionStartDate: item.auctionStartDate?.toISOString() ?? null,
     maxTeams: item.maxTeams,
     minSquadSize: item.minSquadSize,
     maxSquadSize: item.maxSquadSize,
     overseasLimit: item.overseasLimit,
+    retentionLimit: item.retentionLimit,
+    matchOvers: decimalToString(item.matchOvers),
+    powerplayOvers: decimalToString(item.powerplayOvers),
+    pointsForWin: decimalToString(item.pointsForWin),
+    pointsForTie: decimalToString(item.pointsForTie),
+    pointsForNR: decimalToString(item.pointsForNR),
+    nrrEnabled: item.nrrEnabled,
+    isPublic: item.isPublic,
     notes: item.notes,
   };
 }
