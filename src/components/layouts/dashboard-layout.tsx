@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { Skeleton } from "@/components/ui";
 import { DashboardSidebar } from "./dashboard-sidebar";
@@ -74,9 +75,9 @@ export function DashboardLayout({
         <div className="text-center space-y-3">
           <p className="text-lg font-semibold text-destructive">Access Denied</p>
           <p className="text-sm text-muted-foreground">You do not have access to this tournament.</p>
-          <a href="/dashboard" className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          <Link href="/dashboard" className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
             Back to Dashboard
-          </a>
+          </Link>
         </div>
       </div>
     );
