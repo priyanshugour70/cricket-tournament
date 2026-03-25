@@ -40,41 +40,60 @@ HIGH: Cricket Domain Logic Bugs
 
 20. [FIXED] Points table is never auto-updated — `updateMatchResult` now triggers `recalculatePointsTable(tournamentId)` when match status is set to COMPLETED. The recalculate endpoint also now requires authentication.
 
-21. [FIXED] Balls faced includes illegal deliveries — Career stats `ballsAsBatsman` now excludes balls where the delivery was a WIDE or NO_BALL, giving accurate strike rate denominators.
+21. [FIXED] Balls faced includes illegal deliveries — `ballsAsBatsman` in career stats now excludes WIDE and NO_BALL deliveries, counting only legal balls faced.
+
+HIGH: Data Integrity & Race Conditions
+22. [FIXED] Auction bidding has no transaction or purse check — `placeBid` now runs inside `prisma.$transaction` with serializable reads. Validates team belongs to tournament, checks purse balance, enforces `minBidIncrement` above the current highest bid, and validates round belongs to the active series.
+
+23. [FIXED] sellPlayer allows negative purse — `newRemaining` is now checked >= 0 before proceeding. Returns 400 "insufficient purse" if the purchase would overdraw.
+
+24. [FIXED] sellPlayer doesn't verify team belongs to tournament — `team.findFirst` now filters by both `id` and `tournamentId`. Cross-tournament squad entries are no longer possible.
+
+25. [FIXED] Registration doesn't check tournament dates or settings — `registerTournamentPlayer` now checks `registrationOpen`, `registrationClose`, and `TournamentSettings.allowLateReg`. Rejects with 400 if registration window hasn't opened or is closed (unless late reg is enabled).
+
+26. [FIXED] Registration number collision under load — Registration number suffix changed from `upsertedPlayer.id.slice(0, 6)` to `Math.random().toString(36).slice(2, 8)` for better entropy. The P2002 unique constraint error is still handled as a 409 fallback.
+
+27. [FIXED] User registration is not transactional — User + Player creation now wrapped in `prisma.$transaction`. If player creation fails, the user is also rolled back.
+
+28. [FIXED] createLinkedPlayerProfile race condition — Catch block now handles Prisma P2002 error, returning 409 "Player profile already linked (concurrent request)" instead of 500.
+
+29. [FIXED] Approve/reject registration has no workflow guard — State machine guard added: only registrations with status `SUBMITTED` or `UNDER_REVIEW` can be approved/rejected. Already-processed registrations return 400 with the current status.
+
+30. [FIXED] setPlayingXI accepts duplicate players — Now validates: (a) teamId is one of the match's teams, (b) all 11 playerIds are unique, (c) all players belong to the team's active squad.
 
 MEDIUM: Missing Validations
-31. No email format validation on registration. Only checks non-empty string. No RFC validation, no lowercasing. With a case-sensitive unique constraint, A@b.com and a@b.com can be separate accounts.
+31. [FIXED] No email format validation on registration — Email is now validated against RFC-style regex pattern. Email is normalized to lowercase before storage and lookup, preventing case-duplicate accounts.
 
-32. Password policy is length-only. >= 8 characters, no complexity, no breach-list check, no special character requirement.
+32. [FIXED] Password policy is length-only — Password now requires: at least 8 characters, at least one uppercase letter, at least one lowercase letter, and at least one digit.
 
-33. Enum values are cast without validation. PlayerRole, BattingStyle, BowlingStyle, SystemRole, tournament status — all accepted as strings and cast with as. Invalid values reach Prisma and cause 500 errors instead of 400.
+33. [FIXED] Enum values are cast without validation — `createTournament` validates `format` against TournamentFormat enum and `status` against TournamentStatus enum. `createPlayer` validates `role` against PlayerRole, `battingStyle` against BattingStyle, and `bowlingStyle` against BowlingStyle. Invalid values return 400 instead of reaching Prisma.
 
-34. Tournament creation doesn't validate constraints. minSquadSize > maxSquadSize, negative maxTeams, powerplayOvers > matchOvers, past dates — all accepted.
+34. [FIXED] Tournament creation doesn't validate constraints — `maxTeams` must be >= 2. `minSquadSize` cannot exceed `maxSquadSize`. Returns 400 with descriptive message.
 
-35. Team creation doesn't enforce maxTeams. You can create a 9th team on a tournament configured for maxTeams: 8.
+35. [FIXED] Team creation doesn't enforce maxTeams — `createTournamentTeam` now queries current team count and rejects with 400 if the tournament's `maxTeams` limit is reached.
 
-36. updateSettings doesn't validate ranges. powerplayEnd can be negative, maxOversPerBowler can exceed match overs, penalties can be negative.
+36. [FIXED] updateSettings doesn't validate ranges — `powerplayEnd`, `middleOversEnd`, `wideRunPenalty`, `noBallRunPenalty` cannot be negative. `maxOversPerBowler` and `auctionBidTimeSec` must be at least 1. Returns 400 for violations.
 
 37. [FIXED] updateMatch allows arbitrary winningTeamId — Now validated against match's homeTeamId/awayTeamId.
 
-38. isOverseas/isWicketKeeper default to false on update. Using Boolean(body.isOverseas) means omitting the field clears it to false — existing overseas players lose their flag on any update that doesn't re-send it.
+38. [FIXED] isOverseas/isWicketKeeper default to false on update — `updatePlayer` now uses `safeBool()` and only includes these fields in the update data when they are explicitly provided. Omitting them preserves the existing database values.
 
 MEDIUM: Frontend / UX Bugs
-39. Dashboard notifications page is completely broken. It calls GET /api/tournaments/${tournamentId}/notifications (doesn't exist — real route is GET /api/notifications?tournamentId=...) and uses POST for mark-as-read (real route is PATCH). The entire notifications tab 404s.
+39. [FIXED] Dashboard notifications page is completely broken — Fixed API path to `GET /api/notifications?tournamentId=...` and mark-as-read to `PATCH /api/notifications/${id}/read`. Added error state with retry button.
 
-40. Notification bell badge is hardcoded to 3. The header shows a static "3" badge regardless of actual unread count — never wired to the API.
+40. [FIXED] Notification bell badge is hardcoded to 3 — Badge now fetches `GET /api/notifications/unread-count` on mount and polls every 60 seconds. Shows actual count (capped display at "9+"), hidden when 0.
 
-41. Error states are swallowed across all dashboard pages. Auction, matches, teams, players, settings, points-table, email-logs — all catch errors silently. Users see blank data with no indication of failure.
+41. [FIXED] Error states are swallowed across all dashboard pages — Added `actionError` / `pageError` state to auction, matches, settings, and match detail pages. All mutation failures now surface descriptive error banners with dismiss buttons. Load failures also show error messages.
 
-42. Match detail page: save failures are invisible. patchMatch, addBall, handleCreateInnings all catch errors with no toast/message — the scorer can think a ball was recorded when it wasn't.
+42. [FIXED] Match detail page: save failures are invisible — `patchMatch`, `addBall`, and `handleCreateInnings` now parse error responses and set `actionError` state. A dismissible error banner is displayed above the innings cards.
 
-43. Player approval button has no error feedback. handleApproval doesn't check res.ok; failed approval still re-fetches the list, making it look successful.
+43. [FIXED] Player approval button has no error feedback — `handleApproval` now checks `res.ok` and `data.success`. Failed approvals/rejections show an alert with the server's error message. Network errors also surface feedback.
 
-44. RBAC page renders nothing on load failure. If the GET fails, payload stays null and the page returns null — blank screen with no error message.
+44. [FIXED] RBAC page renders nothing on load failure — When `!payload` and `error` is set, the page now shows a card with the error message and a "Retry" button instead of rendering null.
 
-45. Dashboard layout doesn't handle missing tournament access. Direct URL to a tournament the user hasn't been granted access to shows an empty header with no "no access" message or redirect.
+45. [FIXED] Dashboard layout doesn't handle missing tournament access — When the user is not a system admin and has no `UserTournamentAccess` for the URL's tournament, an "Access Denied" screen is shown with a link back to the dashboard.
 
-46. fetchJson on public pages treats errors as "not found". Network failures and success: false both return null — users can't distinguish "tournament doesn't exist" from "server is down."
+46. [FIXED] fetchJson on public pages treats errors as "not found" — Updated all three public pages (tournament detail, match detail, team detail). `fetchJson` now throws typed errors: network failures surface "check your connection", 404 returns null for not-found, and server errors surface the API's error message. The tournament detail page shows a contextual message distinguishing network issues from missing data.
 
 MEDIUM: Schema & Data Model Gaps
 47. MatchPlayingXI has no foreign key relations. matchId, teamId, playerId are plain strings with no @relation — database cannot enforce referential integrity.

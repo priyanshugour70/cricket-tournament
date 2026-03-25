@@ -43,6 +43,10 @@ export async function approveRejectRegistration(tournamentId: string, payload: u
       return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Registration not found in this tournament") };
     }
 
+    if (registration.status !== "SUBMITTED" && registration.status !== "UNDER_REVIEW") {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot ${request.action.toLowerCase()} a registration that is already ${registration.status}`) };
+    }
+
     const now = new Date();
     const updated = await prisma.tournamentPlayerRegistration.update({
       where: { id: request.registrationId },

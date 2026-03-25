@@ -62,6 +62,7 @@ export default function SettingsPage({ params }: { params: Promise<{ tournamentI
   const [savingTournament, setSavingTournament] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [tournamentForm, setTournamentForm] = useState<Record<string, string>>({});
   const [statusValue, setStatusValue] = useState("");
 
@@ -92,7 +93,7 @@ export default function SettingsPage({ params }: { params: Promise<{ tournamentI
         });
       }
       if (sData.success && sData.data) setSettings(sData.data);
-    } catch { /* empty */ } finally { setLoading(false); }
+    } catch { setActionError("Failed to load settings"); } finally { setLoading(false); }
   }, [tournamentId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -109,8 +110,9 @@ export default function SettingsPage({ params }: { params: Promise<{ tournamentI
         method: "PATCH", headers: authHeaders(), body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.success && data.data) setTournament(data.data);
-    } catch { /* empty */ } finally { setSavingTournament(false); }
+      if (data.success && data.data) { setTournament(data.data); setActionError(null); }
+      else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to save tournament"); }
+    } catch { setActionError("Network error — could not save tournament"); } finally { setSavingTournament(false); }
   }
 
   async function handleSaveSettings() {
@@ -122,8 +124,9 @@ export default function SettingsPage({ params }: { params: Promise<{ tournamentI
         method: "PATCH", headers: authHeaders(), body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.success && data.data) setSettings(data.data);
-    } catch { /* empty */ } finally { setSavingSettings(false); }
+      if (data.success && data.data) { setSettings(data.data); setActionError(null); }
+      else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to save settings"); }
+    } catch { setActionError("Network error — could not save settings"); } finally { setSavingSettings(false); }
   }
 
   async function handleChangeStatus() {
@@ -133,8 +136,9 @@ export default function SettingsPage({ params }: { params: Promise<{ tournamentI
         method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status: statusValue }),
       });
       const data = await res.json();
-      if (data.success && data.data) setTournament(data.data);
-    } catch { /* empty */ } finally { setSavingStatus(false); }
+      if (data.success && data.data) { setTournament(data.data); setActionError(null); }
+      else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to update status"); }
+    } catch { setActionError("Network error — could not change status"); } finally { setSavingStatus(false); }
   }
 
   if (loading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><Skeleton className="h-64 w-full" /></div>;
@@ -147,6 +151,13 @@ export default function SettingsPage({ params }: { params: Promise<{ tournamentI
         <h1 className="text-xl font-bold">Tournament Settings</h1>
         {tournament && <Badge variant="outline">{tournament.status.replace(/_/g, " ")}</Badge>}
       </div>
+
+      {actionError && (
+        <div className="flex items-center gap-3 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <span className="flex-1">{actionError}</span>
+          <button className="text-xs underline" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Shield className="h-4 w-4" />General Configuration</CardTitle></CardHeader>

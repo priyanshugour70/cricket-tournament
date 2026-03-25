@@ -162,14 +162,27 @@ const STAGE_ORDER: Record<string, number> = {
   FINAL: 5,
 };
 
-async function fetchJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url);
-    const json: APIResponse<T> = await res.json();
-    return json.success && json.data ? json.data : null;
-  } catch {
-    return null;
+class FetchError extends Error {
+  constructor(public kind: "network" | "not_found" | "server_error", message: string) {
+    super(message);
   }
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new FetchError("network", "Network error — please check your connection");
+  }
+  if (res.status === 404) {
+    throw new FetchError("not_found", "Not found");
+  }
+  const json: APIResponse<T> = await res.json();
+  if (!json.success || !json.data) {
+    throw new FetchError("server_error", typeof json.error === "string" ? json.error : "Server error");
+  }
+  return json.data;
 }
 
 export default function TournamentDetailPage() {
@@ -182,27 +195,37 @@ export default function TournamentDetailPage() {
   const [points, setPoints] = useState<PointsEntry[]>([]);
   const [squads, setSquads] = useState<SquadPlayer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([
-      fetchJson<TournamentDetails>(`/api/tournaments/${id}`).then(setTournament),
-      fetchJson<TeamListItem[]>(`/api/tournaments/${id}/teams`).then((d) =>
-        setTeams(d ?? []),
-      ),
-      fetchJson<TournamentPlayerItem[]>(
-        `/api/tournaments/${id}/players`,
-      ).then((d) => setPlayers(d ?? [])),
-      fetchJson<MatchListItem[]>(`/api/tournaments/${id}/matches`).then((d) =>
-        setMatches(d ?? []),
-      ),
-      fetchJson<PointsEntry[]>(`/api/tournaments/${id}/points-table`).then(
-        (d) => setPoints(d ?? []),
-      ),
-      fetchJson<SquadPlayer[]>(`/api/tournaments/${id}/squads`).then((d) =>
-        setSquads(d ?? []),
-      ),
-    ]).finally(() => setLoading(false));
+    async function load() {
+      try {
+        const [t, tm, pl, ma, pt, sq] = await Promise.all([
+          fetchJson<TournamentDetails>(`/api/tournaments/${id}`).catch(() => null),
+          fetchJson<TeamListItem[]>(`/api/tournaments/${id}/teams`).catch(() => [] as TeamListItem[]),
+          fetchJson<TournamentPlayerItem[]>(`/api/tournaments/${id}/players`).catch(() => [] as TournamentPlayerItem[]),
+          fetchJson<MatchListItem[]>(`/api/tournaments/${id}/matches`).catch(() => [] as MatchListItem[]),
+          fetchJson<PointsEntry[]>(`/api/tournaments/${id}/points-table`).catch(() => [] as PointsEntry[]),
+          fetchJson<SquadPlayer[]>(`/api/tournaments/${id}/squads`).catch(() => [] as SquadPlayer[]),
+        ]);
+        if (!t) {
+          setFetchError("Tournament not found or server unavailable");
+        } else {
+          setTournament(t);
+        }
+        setTeams(tm ?? []);
+        setPlayers(pl ?? []);
+        setMatches(ma ?? []);
+        setPoints(pt ?? []);
+        setSquads(sq ?? []);
+      } catch (e) {
+        setFetchError(e instanceof FetchError ? e.message : "Failed to load tournament");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, [id]);
 
   const matchesByStage = useMemo(() => {
@@ -256,7 +279,12 @@ export default function TournamentDetailPage() {
         <PageHeader />
         <div className="flex flex-1 flex-col items-center justify-center p-6">
           <Trophy className="h-12 w-12 text-muted-foreground/40" />
-          <h2 className="mt-4 text-lg font-semibold">Tournament Not Found</h2>
+          <h2 className="mt-4 text-lg font-semibold">
+            {fetchError ?? "Tournament Not Found"}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {fetchError?.includes("Network") ? "Please check your connection and try again." : "The tournament you are looking for does not exist."}
+          </p>
           <Button asChild variant="outline" className="mt-4">
             <Link href="/tournaments">Back to Tournaments</Link>
           </Button>

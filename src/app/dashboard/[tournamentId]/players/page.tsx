@@ -177,7 +177,7 @@ export default function PlayersPage({
   async function handleApproval(registrationId: string, approve: boolean) {
     setActionLoading(registrationId);
     try {
-      await fetch(`/api/tournaments/${tournamentId}/registrations/approve`, {
+      const res = await fetch(`/api/tournaments/${tournamentId}/registrations/approve`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
@@ -185,9 +185,15 @@ export default function PlayersPage({
           action: approve ? "APPROVE" : "REJECT",
         }),
       });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const msg = typeof data.error === "string" ? data.error : data.error?.message ?? "Action failed";
+        alert(`${approve ? "Approval" : "Rejection"} failed: ${msg}`);
+        return;
+      }
       fetchPlayers();
     } catch {
-      /* empty */
+      alert("Network error — could not process registration action");
     } finally {
       setActionLoading(null);
     }

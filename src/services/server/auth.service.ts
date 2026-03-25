@@ -153,6 +153,14 @@ export async function registerUser(payload: unknown) {
       };
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return {
+        status: 400,
+        body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Invalid email format"),
+      };
+    }
+
     if (password.length < 8) {
       return {
         status: 400,
@@ -162,8 +170,27 @@ export async function registerUser(payload: unknown) {
         ),
       };
     }
+    if (!/[A-Z]/.test(password)) {
+      return {
+        status: 400,
+        body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Password must contain at least one uppercase letter"),
+      };
+    }
+    if (!/[a-z]/.test(password)) {
+      return {
+        status: 400,
+        body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Password must contain at least one lowercase letter"),
+      };
+    }
+    if (!/[0-9]/.test(password)) {
+      return {
+        status: 400,
+        body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Password must contain at least one digit"),
+      };
+    }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = email.toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
       return {
         status: 409,
@@ -180,33 +207,37 @@ export async function registerUser(payload: unknown) {
 
     const systemRole: "USER" | "PLAYER" = wantsPlayerProfile ? "PLAYER" : "USER";
 
-    const user = await prisma.user.create({
-      data: { email, passwordHash, firstName, lastName, displayName, phone, systemRole },
-    });
+    const user = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: { email: normalizedEmail, passwordHash, firstName, lastName, displayName, phone, systemRole },
+      });
 
-    if (wantsPlayerProfile) {
-      const lp = lpRaw && typeof lpRaw === "object" ? (lpRaw as Record<string, unknown>) : {};
-      const role = (safeString(lp.role) ?? "BATTER") as PlayerRole;
-      const pdata: Prisma.PlayerUncheckedCreateInput = {
-        userId: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        displayName: user.displayName,
-        email: user.email,
-        phone: user.phone,
-        role,
-        isOverseas: Boolean(lp.isOverseas),
-        isWicketKeeper: Boolean(lp.isWicketKeeper),
-        nationality: safeString(lp.nationality),
-        state: safeString(lp.state),
-        city: safeString(lp.city),
-      };
-      const bs = safeString(lp.battingStyle);
-      const bws = safeString(lp.bowlingStyle);
-      if (bs) pdata.battingStyle = bs as Prisma.PlayerUncheckedCreateInput["battingStyle"];
-      if (bws) pdata.bowlingStyle = bws as Prisma.PlayerUncheckedCreateInput["bowlingStyle"];
-      await prisma.player.create({ data: pdata });
-    }
+      if (wantsPlayerProfile) {
+        const lp = lpRaw && typeof lpRaw === "object" ? (lpRaw as Record<string, unknown>) : {};
+        const role = (safeString(lp.role) ?? "BATTER") as PlayerRole;
+        const pdata: Prisma.PlayerUncheckedCreateInput = {
+          userId: newUser.id,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+          displayName: newUser.displayName,
+          email: newUser.email,
+          phone: newUser.phone,
+          role,
+          isOverseas: Boolean(lp.isOverseas),
+          isWicketKeeper: Boolean(lp.isWicketKeeper),
+          nationality: safeString(lp.nationality),
+          state: safeString(lp.state),
+          city: safeString(lp.city),
+        };
+        const bs = safeString(lp.battingStyle);
+        const bws = safeString(lp.bowlingStyle);
+        if (bs) pdata.battingStyle = bs as Prisma.PlayerUncheckedCreateInput["battingStyle"];
+        if (bws) pdata.bowlingStyle = bws as Prisma.PlayerUncheckedCreateInput["bowlingStyle"];
+        await tx.player.create({ data: pdata });
+      }
+
+      return newUser;
+    });
 
     const { token, refreshToken } = await createSessionForUser(user);
 
@@ -443,6 +474,9 @@ export async function createLinkedPlayerProfile(req: Request, payload: unknown) 
     const authResponse = await buildAuthResponse(updatedUser, newToken);
     return { status: 201, body: successResponse(authResponse, "Player profile linked") };
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { status: 409, body: errorResponse(ErrorCodes.ALREADY_EXISTS, "Player profile already linked (concurrent request)") };
+    }
     return {
       status: 500,
       body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to create player profile")),

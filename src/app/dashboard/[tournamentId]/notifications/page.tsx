@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { use } from "react";
-import { Bell, Check } from "lucide-react";
+import { Bell, Check, AlertCircle } from "lucide-react";
 import {
   Button,
   Badge,
@@ -48,18 +48,24 @@ export default function NotificationsPage({
   const { tournamentId } = use(params);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState("ALL");
 
   const fetchNotifications = useCallback(async () => {
+    setError(null);
     try {
       const res = await fetch(
-        `/api/tournaments/${tournamentId}/notifications`,
+        `/api/notifications?tournamentId=${tournamentId}`,
         { headers: authHeaders() },
       );
       const data = await res.json();
-      if (data.success) setNotifications(data.data ?? []);
+      if (!res.ok || !data.success) {
+        setError(typeof data.error === "string" ? data.error : "Failed to load notifications");
+        return;
+      }
+      setNotifications(data.data ?? []);
     } catch {
-      /* empty */
+      setError("Network error — could not load notifications");
     } finally {
       setLoading(false);
     }
@@ -71,15 +77,17 @@ export default function NotificationsPage({
 
   async function markAsRead(id: string) {
     try {
-      await fetch(`/api/tournaments/${tournamentId}/notifications/${id}/read`, {
-        method: "POST",
+      const res = await fetch(`/api/notifications/${id}/read`, {
+        method: "PATCH",
         headers: authHeaders(),
       });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
-      );
+      if (res.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+        );
+      }
     } catch {
-      /* empty */
+      /* best effort */
     }
   }
 
@@ -120,7 +128,19 @@ export default function NotificationsPage({
         </Select>
       </div>
 
-      {filtered.length === 0 ? (
+      {error && (
+        <Card className="border-destructive/40">
+          <CardContent className="flex items-center gap-3 py-4 text-destructive">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p className="text-sm">{error}</p>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => { setLoading(true); fetchNotifications(); }}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!error && filtered.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center py-12 text-center">
             <Bell className="mb-3 h-10 w-10 text-muted-foreground/40" />

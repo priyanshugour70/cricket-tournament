@@ -129,6 +129,20 @@ export async function createTournament(payload: unknown) {
     if (!request.code || !request.name || request.pursePerTeam <= 0) {
       return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "code, name and pursePerTeam (> 0) are required") };
     }
+    if (request.maxTeams !== undefined && request.maxTeams < 2) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "maxTeams must be at least 2") };
+    }
+    const VALID_FORMATS = new Set(["T10", "T20", "ODI", "TEST", "HUNDRED"]);
+    const VALID_STATUSES = new Set(["DRAFT", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "AUCTION_SCHEDULED", "AUCTION_IN_PROGRESS", "AUCTION_COMPLETED", "SCHEDULE_READY", "LIVE", "COMPLETED", "CANCELLED", "ARCHIVED"]);
+    if (request.format && !VALID_FORMATS.has(request.format)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid format. Must be one of: ${[...VALID_FORMATS].join(", ")}`) };
+    }
+    if (request.status && !VALID_STATUSES.has(request.status)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid status. Must be one of: ${[...VALID_STATUSES].join(", ")}`) };
+    }
+    if (request.minSquadSize !== undefined && request.maxSquadSize !== undefined && request.minSquadSize > request.maxSquadSize) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "minSquadSize cannot exceed maxSquadSize") };
+    }
 
     const created = await prisma.tournament.create({
       data: {
@@ -233,6 +247,14 @@ export async function createTournamentTeam(tournamentId: string, payload: unknow
     };
     if (!request.code || !request.name || request.purseTotal <= 0) {
       return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "code, name and purseTotal (> 0) are required") };
+    }
+
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { maxTeams: true, _count: { select: { teams: true } } },
+    });
+    if (tournament && tournament._count.teams >= tournament.maxTeams) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Maximum number of teams (${tournament.maxTeams}) reached for this tournament`) };
     }
 
     const created = await prisma.team.create({
@@ -357,6 +379,24 @@ export async function registerTournamentPlayer(
       registrationNumber: safeString(body.registrationNumber),
     };
 
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { registrationOpen: true, registrationClose: true, status: true },
+    });
+    if (!tournament) {
+      return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Tournament not found") };
+    }
+    const now = new Date();
+    if (tournament.registrationOpen && now < tournament.registrationOpen) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Registration has not opened yet") };
+    }
+    if (tournament.registrationClose && now > tournament.registrationClose) {
+      const settings = await prisma.tournamentSettings.findUnique({ where: { tournamentId } });
+      if (!settings?.allowLateReg) {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Registration is closed for this tournament") };
+      }
+    }
+
     const linked =
       authUserId
         ? await prisma.user
@@ -443,7 +483,7 @@ export async function registerTournamentPlayer(
           playerId: upsertedPlayer.id,
           registrationNumber:
             request.registrationNumber ??
-            `REG-${Date.now()}-${upsertedPlayer.id.slice(0, 6).toUpperCase()}`,
+            `REG-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
           expectedPrice: request.expectedPrice,
         },
         include: { player: { select: { id: true, displayName: true, role: true, battingStyle: true, bowlingStyle: true, isOverseas: true } } },

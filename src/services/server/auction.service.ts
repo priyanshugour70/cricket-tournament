@@ -236,26 +236,76 @@ export async function placeBid(tournamentId: string, payload: unknown) {
       return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "teamId, playerId and bidAmount (> 0) are required") };
     }
 
-    const activeSeries = await prisma.auctionSeries.findFirst({
-      where: { tournamentId, status: "LIVE" },
-    });
-    if (!activeSeries) {
-      return { status: 400, body: errorResponse(ErrorCodes.BAD_REQUEST, "No active auction series found for this tournament") };
-    }
+    const result = await prisma.$transaction(async (tx) => {
+      const activeSeries = await tx.auctionSeries.findFirst({
+        where: { tournamentId, status: "LIVE" },
+      });
+      if (!activeSeries) {
+        throw new Error("NO_ACTIVE_SERIES");
+      }
 
-    const created = await prisma.auctionBid.create({
-      data: {
-        tournamentId,
-        auctionSeriesId: activeSeries.id,
-        auctionRoundId: request.auctionRoundId,
-        teamId: request.teamId,
-        playerId: request.playerId,
-        bidAmount: request.bidAmount,
-      },
-      include: bidInclude,
+      const team = await tx.team.findFirst({
+        where: { id: request.teamId, tournamentId },
+      });
+      if (!team) {
+        throw new Error("TEAM_NOT_IN_TOURNAMENT");
+      }
+
+      if (Number(team.purseRemaining) < request.bidAmount) {
+        throw new Error("INSUFFICIENT_PURSE");
+      }
+
+      const minIncrement = Number(activeSeries.minBidIncrement);
+      const highestBid = await tx.auctionBid.findFirst({
+        where: { tournamentId, auctionSeriesId: activeSeries.id, playerId: request.playerId },
+        orderBy: { bidAmount: "desc" },
+      });
+      if (highestBid && request.bidAmount < Number(highestBid.bidAmount) + minIncrement) {
+        throw new Error(`BID_TOO_LOW:${Number(highestBid.bidAmount) + minIncrement}`);
+      }
+
+      if (request.auctionRoundId) {
+        const round = await tx.auctionRound.findFirst({
+          where: { id: request.auctionRoundId, auctionSeriesId: activeSeries.id },
+        });
+        if (!round) {
+          throw new Error("ROUND_NOT_IN_SERIES");
+        }
+      }
+
+      return tx.auctionBid.create({
+        data: {
+          tournamentId,
+          auctionSeriesId: activeSeries.id,
+          auctionRoundId: request.auctionRoundId,
+          teamId: request.teamId,
+          playerId: request.playerId,
+          bidAmount: request.bidAmount,
+        },
+        include: bidInclude,
+      });
     });
-    return { status: 201, body: successResponse(mapBidItem(created), "Bid placed") };
+
+    return { status: 201, body: successResponse(mapBidItem(result), "Bid placed") };
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "NO_ACTIVE_SERIES") {
+        return { status: 400, body: errorResponse(ErrorCodes.BAD_REQUEST, "No active auction series found for this tournament") };
+      }
+      if (error.message === "TEAM_NOT_IN_TOURNAMENT") {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Team does not belong to this tournament") };
+      }
+      if (error.message === "INSUFFICIENT_PURSE") {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Team does not have sufficient purse for this bid") };
+      }
+      if (error.message.startsWith("BID_TOO_LOW:")) {
+        const min = error.message.split(":")[1];
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Bid must be at least ${min} (current highest + minimum increment)`) };
+      }
+      if (error.message === "ROUND_NOT_IN_SERIES") {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Auction round does not belong to the active series") };
+      }
+    }
     return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to place bid")) };
   }
 }
@@ -302,9 +352,15 @@ export async function sellPlayer(tournamentId: string, payload: unknown) {
         },
       });
 
-      const team = await tx.team.findUniqueOrThrow({ where: { id: request.teamId } });
+      const team = await tx.team.findFirst({ where: { id: request.teamId, tournamentId } });
+      if (!team) {
+        throw new Error("TEAM_NOT_IN_TOURNAMENT");
+      }
       const newSpent = team.purseSpent.add(new Prisma.Decimal(request.soldPrice));
       const newRemaining = team.purseTotal.sub(newSpent);
+      if (Number(newRemaining) < 0) {
+        throw new Error("INSUFFICIENT_PURSE");
+      }
 
       await tx.team.update({
         where: { id: request.teamId },
@@ -348,6 +404,12 @@ export async function sellPlayer(tournamentId: string, payload: unknown) {
 
     return { status: 200, body: successResponse(mapBidItem(result), "Player sold successfully") };
   } catch (error) {
+    if (error instanceof Error && error.message === "TEAM_NOT_IN_TOURNAMENT") {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Team does not belong to this tournament") };
+    }
+    if (error instanceof Error && error.message === "INSUFFICIENT_PURSE") {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Team does not have sufficient purse for this purchase") };
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { status: 409, body: errorResponse(ErrorCodes.ALREADY_EXISTS, "Player is already in a squad for this tournament") };
     }

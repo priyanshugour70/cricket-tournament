@@ -66,13 +66,18 @@ function fmtCurrency(v: string) {
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {
+  let res: Response;
   try {
-    const res = await fetch(url);
-    const json: APIResponse<T> = await res.json();
-    return json.success && json.data ? json.data : null;
+    res = await fetch(url);
   } catch {
-    return null;
+    throw new Error("Network error — please check your connection");
   }
+  if (res.status === 404) return null;
+  const json: APIResponse<T> = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(typeof json.error === "string" ? json.error : "Server error");
+  }
+  return json.data ?? null;
 }
 
 export default function TeamDetailPage() {

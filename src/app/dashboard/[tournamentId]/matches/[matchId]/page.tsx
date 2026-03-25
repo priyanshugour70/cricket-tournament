@@ -87,6 +87,7 @@ export default function MatchDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeInnings, setActiveInnings] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [tossForm, setTossForm] = useState({ tossWonByTeamId: "", tossDecision: "" });
   const [statusForm, setStatusForm] = useState("");
@@ -163,14 +164,19 @@ export default function MatchDetailPage() {
 
   async function patchMatch(data: Record<string, unknown>) {
     setSaving(true);
+    setActionError(null);
     try {
       const res = await fetch(`/api/tournaments/${tournamentId}/matches/${matchId}`, {
         method: "PATCH", headers: authHeaders(), body: JSON.stringify(data),
       });
       const r = await res.json();
-      if (r.success && r.data) setMatch(r.data);
+      if (r.success && r.data) {
+        setMatch(r.data);
+      } else {
+        setActionError(typeof r.error === "string" ? r.error : r.error?.message ?? "Failed to save match");
+      }
     } catch {
-      /* network error */
+      setActionError("Network error — could not save match");
     } finally {
       setSaving(false);
     }
@@ -204,9 +210,11 @@ export default function MatchDetailPage() {
       if (data.success && data.data) {
         setInnings(prev => [...prev, data.data]);
         setActiveInnings(data.data.id);
+      } else {
+        setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to create innings");
       }
     } catch {
-      /* network error */
+      setActionError("Network error — could not create innings");
     } finally {
       setSaving(false);
     }
@@ -244,15 +252,18 @@ export default function MatchDetailPage() {
       if (data.success && data.data) {
         setBalls(prev => [...prev, data.data]);
         setBallCommentaryNote("");
+        setActionError(null);
         const iRes = await fetch(`/api/matches/${matchId}/innings`, { headers: authHeaders() });
         const iData = await iRes.json();
         if (iData.success) setInnings(iData.data);
         const cRes = await fetch(`/api/matches/${matchId}/innings/${activeInnings}/commentary`, { headers: authHeaders() });
         const cData = await cRes.json();
         if (cData.success) setCommentary(cData.data ?? []);
+      } else {
+        setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to record ball");
       }
     } catch {
-      /* network error */
+      setActionError("Network error — ball may not have been recorded");
     } finally {
       setSaving(false);
     }
@@ -356,6 +367,13 @@ export default function MatchDetailPage() {
           </p>
         </div>
       </div>
+
+      {actionError && (
+        <div className="flex items-center gap-3 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <span className="flex-1">{actionError}</span>
+          <button className="text-xs underline" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {innings.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2">

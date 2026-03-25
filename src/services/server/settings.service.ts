@@ -83,6 +83,25 @@ export async function updateSettings(tournamentId: string, payload: unknown) {
     if (typeof body.auctionMinIncrement === "number") data.auctionMinIncrement = body.auctionMinIncrement;
     if (typeof body.customRules === "string") data.customRules = body.customRules || null;
 
+    if (typeof data.powerplayEnd === "number" && (data.powerplayEnd as number) < 0) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "powerplayEnd cannot be negative") };
+    }
+    if (typeof data.middleOversEnd === "number" && (data.middleOversEnd as number) < 0) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "middleOversEnd cannot be negative") };
+    }
+    if (typeof data.maxOversPerBowler === "number" && (data.maxOversPerBowler as number) < 1) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "maxOversPerBowler must be at least 1") };
+    }
+    if (typeof data.wideRunPenalty === "number" && (data.wideRunPenalty as number) < 0) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "wideRunPenalty cannot be negative") };
+    }
+    if (typeof data.noBallRunPenalty === "number" && (data.noBallRunPenalty as number) < 0) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "noBallRunPenalty cannot be negative") };
+    }
+    if (typeof data.auctionBidTimeSec === "number" && (data.auctionBidTimeSec as number) < 1) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "auctionBidTimeSec must be at least 1") };
+    }
+
     const updated = await prisma.tournamentSettings.upsert({
       where: { tournamentId },
       create: { tournamentId, ...data },

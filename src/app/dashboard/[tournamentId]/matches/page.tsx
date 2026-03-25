@@ -64,6 +64,7 @@ export default function MatchesPage({
   const [matches, setMatches] = useState<Match[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [matchForm, setMatchForm] = useState({
@@ -88,7 +89,7 @@ export default function MatchesPage({
       if (mData.success) setMatches(mData.data ?? []);
       if (tData.success) setTeams(tData.data ?? []);
     } catch {
-      /* empty */
+      setPageError("Failed to load matches");
     } finally {
       setLoading(false);
     }
@@ -122,9 +123,12 @@ export default function MatchesPage({
         });
         setShowForm(false);
         fetchData();
+      } else {
+        const msg = typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to create match";
+        setPageError(msg);
       }
     } catch {
-      /* empty */
+      setPageError("Network error — could not create match");
     } finally {
       setSaving(false);
     }
@@ -141,6 +145,12 @@ export default function MatchesPage({
 
   return (
     <div className="space-y-4">
+      {pageError && (
+        <div className="flex items-center gap-3 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <span className="flex-1">{pageError}</span>
+          <button className="text-xs underline" onClick={() => setPageError(null)}>Dismiss</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Matches ({matches.length})</h1>
         <Button size="sm" onClick={() => setShowForm(!showForm)}>

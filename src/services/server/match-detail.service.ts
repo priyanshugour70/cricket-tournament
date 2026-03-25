@@ -139,6 +139,34 @@ export async function setPlayingXI(matchId: string, payload: unknown) {
       return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "teamId and exactly 11 players are required") };
     }
 
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      select: { homeTeamId: true, awayTeamId: true, tournamentId: true },
+    });
+    if (!match) {
+      return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Match not found") };
+    }
+
+    if (teamId !== match.homeTeamId && teamId !== match.awayTeamId) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "teamId must be one of the match's teams") };
+    }
+
+    const playerIds = players.map((p: unknown) => String((asRecord(p)).playerId ?? ""));
+    const uniqueIds = new Set(playerIds);
+    if (uniqueIds.size !== 11) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "All 11 players must be unique") };
+    }
+
+    const squadPlayers = await prisma.teamSquadPlayer.findMany({
+      where: { teamId, tournamentId: match.tournamentId, isActive: true },
+      select: { playerId: true },
+    });
+    const squadPlayerIds = new Set(squadPlayers.map(sp => sp.playerId));
+    const notInSquad = playerIds.filter((id: string) => !squadPlayerIds.has(id));
+    if (notInSquad.length > 0) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `${notInSquad.length} player(s) are not in the team's squad`) };
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.matchPlayingXI.deleteMany({ where: { matchId, teamId } });
       for (const p of players) {

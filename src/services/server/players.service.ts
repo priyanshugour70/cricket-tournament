@@ -155,6 +155,18 @@ export async function createPlayer(payload: unknown) {
     if (!request.firstName || !request.displayName || !request.role) {
       return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "firstName, displayName and role are required") };
     }
+    const VALID_ROLES = new Set(["BATTER", "BOWLER", "ALL_ROUNDER", "WICKET_KEEPER"]);
+    if (!VALID_ROLES.has(request.role)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid role. Must be one of: ${[...VALID_ROLES].join(", ")}`) };
+    }
+    const VALID_BATTING = new Set(["RIGHT_HANDED", "LEFT_HANDED"]);
+    if (request.battingStyle && !VALID_BATTING.has(request.battingStyle)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid battingStyle. Must be one of: ${[...VALID_BATTING].join(", ")}`) };
+    }
+    const VALID_BOWLING = new Set(["RIGHT_ARM_FAST", "RIGHT_ARM_MEDIUM", "LEFT_ARM_FAST", "LEFT_ARM_MEDIUM", "RIGHT_ARM_OFF_SPIN", "RIGHT_ARM_LEG_SPIN", "LEFT_ARM_ORTHODOX", "LEFT_ARM_UNORTHODOX", "DOES_NOT_BOWL"]);
+    if (request.bowlingStyle && !VALID_BOWLING.has(request.bowlingStyle)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid bowlingStyle. Must be one of: ${[...VALID_BOWLING].join(", ")}`) };
+    }
 
     const created = await prisma.player.create({
       data: {
@@ -215,28 +227,30 @@ export async function updatePlayer(id: string, payload: unknown) {
       active: safeBool(body.active),
     };
 
+    const data: Prisma.PlayerUpdateInput = {
+      firstName: request.firstName,
+      lastName: request.lastName,
+      displayName: request.displayName,
+      role: request.role,
+      battingStyle: request.battingStyle,
+      bowlingStyle: request.bowlingStyle,
+      isCapped: request.isCapped,
+      nationality: request.nationality,
+      state: request.state,
+      city: request.city,
+      reservePrice: request.reservePrice,
+      basePrice: request.basePrice,
+      email: request.email,
+      phone: request.phone,
+      bio: request.bio,
+      active: request.active,
+    };
+    if (safeBool(body.isOverseas) !== undefined) data.isOverseas = request.isOverseas;
+    if (safeBool(body.isWicketKeeper) !== undefined) data.isWicketKeeper = request.isWicketKeeper;
+
     const updated = await prisma.player.update({
       where: { id },
-      data: {
-        firstName: request.firstName,
-        lastName: request.lastName,
-        displayName: request.displayName,
-        role: request.role,
-        battingStyle: request.battingStyle,
-        bowlingStyle: request.bowlingStyle,
-        isOverseas: request.isOverseas,
-        isWicketKeeper: request.isWicketKeeper,
-        isCapped: request.isCapped,
-        nationality: request.nationality,
-        state: request.state,
-        city: request.city,
-        reservePrice: request.reservePrice,
-        basePrice: request.basePrice,
-        email: request.email,
-        phone: request.phone,
-        bio: request.bio,
-        active: request.active,
-      },
+      data,
     });
     return { status: 200, body: successResponse(mapPlayerDetail(updated), "Player updated successfully") };
   } catch (error) {

@@ -102,7 +102,33 @@ export default function AdministrativeRbacPage() {
     );
   }
 
-  if (!hasPermission("admin.rbac.manage") || !payload) return null;
+  if (!hasPermission("admin.rbac.manage")) return null;
+
+  if (!payload) {
+    return (
+      <div className="mx-auto max-w-6xl p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/dashboard/administrative">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <h1 className="text-xl font-semibold">Roles & permissions</h1>
+        </div>
+        {error ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-destructive font-medium mb-2">Failed to load permission matrix</p>
+              <p className="text-sm text-muted-foreground mb-4">{error}</p>
+              <Button variant="outline" onClick={() => void load()}>Retry</Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Skeleton className="h-96 w-full" />
+        )}
+      </div>
+    );
+  }
 
   const roles = payload.roles;
 

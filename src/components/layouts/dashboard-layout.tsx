@@ -67,6 +67,21 @@ export function DashboardLayout({
     (a) => a.tournamentId === tournamentId,
   );
 
+  const isSystemAdmin = user.systemRole === "SUPER_ADMIN" || user.systemRole === "ADMIN";
+  if (!currentAccess && !isSystemAdmin) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center space-y-3">
+          <p className="text-lg font-semibold text-destructive">Access Denied</p>
+          <p className="text-sm text-muted-foreground">You do not have access to this tournament.</p>
+          <a href="/dashboard" className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            Back to Dashboard
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <DashboardSidebar

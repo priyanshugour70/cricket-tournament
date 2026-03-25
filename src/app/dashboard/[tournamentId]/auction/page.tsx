@@ -57,6 +57,7 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [showSeriesForm, setShowSeriesForm] = useState(false);
   const [seriesName, setSeriesName] = useState("");
@@ -92,7 +93,7 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
           basePrice: r.basePrice ? String(r.basePrice) : null,
         })));
       }
-    } catch { /* empty */ } finally { setLoading(false); }
+    } catch { setActionError("Failed to load auction data"); } finally { setLoading(false); }
   }, [tournamentId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -121,7 +122,8 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
       });
       const data = await res.json();
       if (data.success) { setSeriesName(""); setShowSeriesForm(false); fetchData(); }
-    } catch { /* empty */ } finally { setSaving(false); }
+      else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to create series"); }
+    } catch { setActionError("Network error — could not create series"); } finally { setSaving(false); }
   }
 
   async function handleCreateRound(e: FormEvent) {
@@ -142,8 +144,8 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
         setRoundForm({ name: "", type: "MARQUEE", maxPlayers: "" });
         setShowRoundForm(false);
         loadSeriesDetail(expandedSeries);
-      }
-    } catch { /* empty */ } finally { setSaving(false); }
+      } else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to create round"); }
+    } catch { setActionError("Network error — could not create round"); } finally { setSaving(false); }
   }
 
   async function handlePlaceBid(e: FormEvent) {
@@ -167,8 +169,8 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
         setBidForm({ teamId: "", playerId: "", bidAmount: "" });
         setShowBidDialog(false);
         loadSeriesDetail(expandedSeries);
-      }
-    } catch { /* empty */ } finally { setSaving(false); }
+      } else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to place bid"); }
+    } catch { setActionError("Network error — could not place bid"); } finally { setSaving(false); }
   }
 
   async function handleSellPlayer(e: FormEvent) {
@@ -185,8 +187,8 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
         setShowSellDialog(false);
         fetchData();
         if (expandedSeries) loadSeriesDetail(expandedSeries);
-      }
-    } catch { /* empty */ } finally { setSaving(false); }
+      } else { setActionError(typeof data.error === "string" ? data.error : data.error?.message ?? "Failed to sell player"); }
+    } catch { setActionError("Network error — could not sell player"); } finally { setSaving(false); }
   }
 
   if (loading) return <div className="space-y-4"><Skeleton className="h-9 w-48" /><Skeleton className="h-64 w-full" /></div>;
@@ -196,6 +198,12 @@ export default function AuctionPage({ params }: { params: Promise<{ tournamentId
 
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div className="flex items-center gap-3 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <span className="flex-1">{actionError}</span>
+          <button className="text-xs underline" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Auction</h1>
         <div className="flex gap-2">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Menu, Bell, LogOut } from "lucide-react";
 import { Button, Badge } from "@/components/ui";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
@@ -29,6 +30,31 @@ export function DashboardHeader({
   const initials =
     (user.firstName?.charAt(0) ?? "") + (user.lastName?.charAt(0) ?? "");
 
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    async function fetchUnread() {
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+        if (!token) return;
+        const res = await fetch("/api/notifications/unread-count", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await res.json();
+        if (json.success && typeof json.data === "number") {
+          setUnreadCount(json.data);
+        } else if (json.success && json.data && typeof json.data.count === "number") {
+          setUnreadCount(json.data.count);
+        }
+      } catch {
+        /* best effort */
+      }
+    }
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/60 lg:px-6">
       <Button
@@ -55,9 +81,11 @@ export function DashboardHeader({
 
       <Button variant="ghost" size="icon" className="relative">
         <Bell className="h-5 w-5" />
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
-          3
-        </span>
+        {unreadCount > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
       </Button>
 
       <DropdownMenu>
