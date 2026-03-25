@@ -84,7 +84,54 @@ export interface UpdatePlayerRequest {
   active?: boolean;
 }
 
+export interface PlayerCareerMatchItem {
+  matchId: string;
+  tournamentName: string;
+  matchNo: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  status: string;
+  resultSummary: string | null;
+  scheduledAt: string | null;
+}
+
+export interface PlayerCareerBallItem {
+  id: string;
+  matchId: string;
+  tournamentName: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  inningsNo: number;
+  overNo: number;
+  ballNo: number;
+  involvement: "batsman" | "bowler" | "dismissed";
+  runs: number;
+  totalRuns: number;
+  isWicket: boolean;
+  isFour: boolean;
+  isSix: boolean;
+  extraType: string | null;
+  createdAt: string;
+}
+
+export interface PlayerCareer {
+  playerId: string;
+  displayName: string;
+  runsOffBat: number;
+  ballsAsBatsman: number;
+  dismissalsAsBatsman: number;
+  wicketsAsBowler: number;
+  runsConcededOffBat: number;
+  ballsAsBowler: number;
+  fours: number;
+  sixes: number;
+  squadAssignments: number;
+  recentMatches: PlayerCareerMatchItem[];
+  recentBallInvolvement: PlayerCareerBallItem[];
+}
+
 export type ListPlayersResponse = APIResponse<PlayerListItem[]>;
 export type PlayerDetailResponse = APIResponse<PlayerDetail>;
 export type CreatePlayerResponse = APIResponse<PlayerDetail>;
 export type UpdatePlayerResponse = APIResponse<PlayerDetail>;
+export type PlayerCareerResponse = APIResponse<PlayerCareer>;

@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { use } from "react";
-import { Trophy } from "lucide-react";
+import { Trophy, RefreshCw, Loader2 } from "lucide-react";
 import {
+  Button,
   Card,
-  CardHeader,
-  CardTitle,
   CardContent,
   Skeleton,
   Table,
@@ -15,7 +14,9 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  Badge,
 } from "@/components/ui";
+import { useAuth } from "@/lib/auth-context";
 
 type PointsTableRow = {
   id: string;
@@ -28,8 +29,12 @@ type PointsTableRow = {
   lost: number;
   tied: number;
   noResult: number;
-  points: string;
-  nrr: string;
+  points: number;
+  nrr: number;
+  runsScored: number;
+  oversFaced: number;
+  runsConceded: number;
+  oversBowled: number;
 };
 
 function authHeaders(): Record<string, string> {
@@ -48,8 +53,12 @@ export default function PointsTablePage({
   params: Promise<{ tournamentId: string }>;
 }) {
   const { tournamentId } = use(params);
+  const { user } = useAuth();
+  const isAdmin = user?.systemRole === "SUPER_ADMIN" || user?.systemRole === "ADMIN";
+
   const [entries, setEntries] = useState<PointsTableRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recalculating, setRecalculating] = useState(false);
 
   const fetchPoints = useCallback(async () => {
     try {
@@ -59,22 +68,30 @@ export default function PointsTablePage({
       );
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
-        setEntries(
-          data.data.map((row: Record<string, unknown>) => ({
-            id: String(row.id ?? ""),
-            teamId: String(row.teamId ?? ""),
-            teamName: String(row.teamName ?? ""),
-            teamCode: String(row.teamCode ?? ""),
-            position: Number(row.position ?? 0),
-            played: Number(row.played ?? 0),
-            won: Number(row.won ?? 0),
-            lost: Number(row.lost ?? 0),
-            tied: Number(row.tied ?? 0),
-            noResult: Number(row.noResult ?? 0),
-            points: String(row.points ?? "0"),
-            nrr: String(row.nrr ?? "0"),
-          })),
-        );
+        const rows: PointsTableRow[] = data.data.map((row: Record<string, unknown>) => ({
+          id: String(row.id ?? ""),
+          teamId: String(row.teamId ?? ""),
+          teamName: String(row.teamName ?? ""),
+          teamCode: String(row.teamCode ?? ""),
+          position: Number(row.position ?? 0),
+          played: Number(row.played ?? 0),
+          won: Number(row.won ?? 0),
+          lost: Number(row.lost ?? 0),
+          tied: Number(row.tied ?? 0),
+          noResult: Number(row.noResult ?? 0),
+          points: Number(row.points ?? 0),
+          nrr: Number(row.nrr ?? 0),
+          runsScored: Number(row.runsScored ?? 0),
+          oversFaced: Number(row.oversFaced ?? 0),
+          runsConceded: Number(row.runsConceded ?? 0),
+          oversBowled: Number(row.oversBowled ?? 0),
+        }));
+        rows.sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          return b.nrr - a.nrr;
+        });
+        rows.forEach((r, i) => { r.position = i + 1; });
+        setEntries(rows);
       }
     } catch {
       /* empty */
@@ -87,6 +104,21 @@ export default function PointsTablePage({
     fetchPoints();
   }, [fetchPoints]);
 
+  async function handleRecalculate() {
+    setRecalculating(true);
+    try {
+      await fetch(`/api/tournaments/${tournamentId}/points-table/recalculate`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      await fetchPoints();
+    } catch {
+      /* empty */
+    } finally {
+      setRecalculating(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -98,7 +130,15 @@ export default function PointsTablePage({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Points Table</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Points Table</h1>
+        {isAdmin && (
+          <Button size="sm" variant="outline" onClick={handleRecalculate} disabled={recalculating}>
+            {recalculating ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
+            Recalculate
+          </Button>
+        )}
+      </div>
 
       {entries.length === 0 ? (
         <Card>
@@ -111,7 +151,7 @@ export default function PointsTablePage({
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -127,49 +167,59 @@ export default function PointsTablePage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {entries.map((entry, i) => {
-                const nrrNum = Number.parseFloat(entry.nrr);
-                const nrrSafe = Number.isFinite(nrrNum) ? nrrNum : 0;
+              {entries.map((entry) => {
+                const isQualified = entry.position <= 4;
+                const nrrSafe = Number.isFinite(entry.nrr) ? entry.nrr : 0;
                 return (
-                <TableRow
-                  key={entry.id || entry.teamId}
-                  className={i < 4 ? "bg-green-50/50" : ""}
-                >
-                  <TableCell className="text-center font-bold tabular-nums">
-                    {entry.position}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-xs font-bold text-primary">
-                        {entry.teamCode.slice(0, 3).toUpperCase()}
+                  <TableRow
+                    key={entry.id || entry.teamId}
+                    className={isQualified ? "bg-green-50/50" : ""}
+                  >
+                    <TableCell className="text-center font-bold tabular-nums">
+                      <div className="flex items-center justify-center gap-1">
+                        {entry.position}
+                        {entry.position === 1 && <Trophy className="h-3.5 w-3.5 text-yellow-500" />}
                       </div>
-                      <span className="font-medium">{entry.teamName}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center tabular-nums">
-                    {entry.played}
-                  </TableCell>
-                  <TableCell className="text-center tabular-nums text-green-700">
-                    {entry.won}
-                  </TableCell>
-                  <TableCell className="text-center tabular-nums text-red-600">
-                    {entry.lost}
-                  </TableCell>
-                  <TableCell className="text-center tabular-nums">
-                    {entry.tied}
-                  </TableCell>
-                  <TableCell className="text-center tabular-nums">
-                    {entry.noResult}
-                  </TableCell>
-                  <TableCell className="text-center text-base font-bold tabular-nums">
-                    {entry.points}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {nrrSafe >= 0 ? "+" : ""}
-                    {nrrSafe.toFixed(3)}
-                  </TableCell>
-                </TableRow>
-              );
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-xs font-bold text-primary">
+                          {entry.teamCode.slice(0, 3).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="font-medium">{entry.teamName}</span>
+                          {isQualified && (
+                            <Badge variant="secondary" className="ml-2 text-[10px]">Q</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      {entry.played}
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums text-green-700">
+                      {entry.won}
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums text-red-600">
+                      {entry.lost}
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      {entry.tied}
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      {entry.noResult}
+                    </TableCell>
+                    <TableCell className="text-center text-base font-bold tabular-nums">
+                      {entry.points}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <span className={nrrSafe >= 0 ? "text-green-700" : "text-red-600"}>
+                        {nrrSafe >= 0 ? "+" : ""}
+                        {nrrSafe.toFixed(3)}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                );
               })}
             </TableBody>
           </Table>

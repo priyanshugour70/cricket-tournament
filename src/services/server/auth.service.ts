@@ -1,5 +1,6 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type PlayerRole, type SystemRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getPermissionKeysForRole } from "@/lib/rbac.server";
 import {
   comparePassword,
   getSessionFromRequest,
@@ -17,6 +18,7 @@ import {
 import type {
   AuthResponse,
   AuthUser,
+  LinkedPlayerSummary,
   TournamentAccessItem,
 } from "@/types/api/auth";
 
@@ -27,6 +29,20 @@ function asRecord(payload: unknown): Record<string, unknown> {
 
 function safeString(v: unknown): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
+}
+
+async function fetchLinkedPlayerSummary(userId: string): Promise<LinkedPlayerSummary | null> {
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      linkedPlayer: {
+        select: { id: true, displayName: true, role: true, code: true },
+      },
+    },
+  });
+  const p = u?.linkedPlayer;
+  if (!p) return null;
+  return { id: p.id, displayName: p.displayName, role: p.role, code: p.code };
 }
 
 async function fetchTournamentAccesses(
@@ -79,10 +95,14 @@ async function buildAuthResponse(
   refreshToken?: string,
 ): Promise<AuthResponse> {
   const tournamentAccesses = await fetchTournamentAccesses(user.id);
+  const linkedPlayer = await fetchLinkedPlayerSummary(user.id);
+  const permissions = await getPermissionKeysForRole(user.systemRole as SystemRole);
   const base: AuthResponse = {
     user: mapAuthUser(user),
     token,
     tournamentAccesses,
+    linkedPlayer,
+    permissions,
   };
   if (refreshToken) return { ...base, refreshToken };
   return base;
@@ -153,9 +173,40 @@ export async function registerUser(payload: unknown) {
 
     const passwordHash = await hashPassword(password);
 
+    const lpRaw = body.linkedPlayerProfile;
+    const registerAsPlayer = Boolean(body.registerAsPlayer);
+    const wantsPlayerProfile =
+      registerAsPlayer || (lpRaw !== null && lpRaw !== undefined && typeof lpRaw === "object");
+
+    const systemRole: "USER" | "PLAYER" = wantsPlayerProfile ? "PLAYER" : "USER";
+
     const user = await prisma.user.create({
-      data: { email, passwordHash, firstName, lastName, displayName, phone },
+      data: { email, passwordHash, firstName, lastName, displayName, phone, systemRole },
     });
+
+    if (wantsPlayerProfile) {
+      const lp = lpRaw && typeof lpRaw === "object" ? (lpRaw as Record<string, unknown>) : {};
+      const role = (safeString(lp.role) ?? "BATTER") as PlayerRole;
+      const pdata: Prisma.PlayerUncheckedCreateInput = {
+        userId: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        displayName: user.displayName,
+        email: user.email,
+        phone: user.phone,
+        role,
+        isOverseas: Boolean(lp.isOverseas),
+        isWicketKeeper: Boolean(lp.isWicketKeeper),
+        nationality: safeString(lp.nationality),
+        state: safeString(lp.state),
+        city: safeString(lp.city),
+      };
+      const bs = safeString(lp.battingStyle);
+      const bws = safeString(lp.bowlingStyle);
+      if (bs) pdata.battingStyle = bs as Prisma.PlayerUncheckedCreateInput["battingStyle"];
+      if (bws) pdata.bowlingStyle = bws as Prisma.PlayerUncheckedCreateInput["bowlingStyle"];
+      await prisma.player.create({ data: pdata });
+    }
 
     const { token, refreshToken } = await createSessionForUser(user);
 
@@ -319,6 +370,78 @@ export async function refreshAccessToken(payload: unknown) {
         ErrorCodes.INTERNAL_ERROR,
         getErrorMessage(error, "Unable to refresh session"),
       ),
+    };
+  }
+}
+
+export async function createLinkedPlayerProfile(req: Request, payload: unknown) {
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session) {
+      return { status: 401, body: errorResponse(ErrorCodes.UNAUTHORIZED, "Not authenticated") };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId, isActive: true },
+      include: { linkedPlayer: { select: { id: true } } },
+    });
+    if (!user) {
+      return { status: 401, body: errorResponse(ErrorCodes.UNAUTHORIZED, "User not found") };
+    }
+    if (user.linkedPlayer) {
+      return { status: 409, body: errorResponse(ErrorCodes.ALREADY_EXISTS, "Player profile already linked to this account") };
+    }
+
+    const body = asRecord(payload);
+    const role = (safeString(body.role) ?? "BATTER") as PlayerRole;
+
+    const pdata: Prisma.PlayerUncheckedCreateInput = {
+      userId: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      displayName: user.displayName,
+      email: user.email,
+      phone: user.phone,
+      role,
+      isOverseas: Boolean(body.isOverseas),
+      isWicketKeeper: Boolean(body.isWicketKeeper),
+      nationality: safeString(body.nationality),
+      state: safeString(body.state),
+      city: safeString(body.city),
+    };
+    const bs = safeString(body.battingStyle);
+    const bws = safeString(body.bowlingStyle);
+    if (bs) pdata.battingStyle = bs as Prisma.PlayerUncheckedCreateInput["battingStyle"];
+    if (bws) pdata.bowlingStyle = bws as Prisma.PlayerUncheckedCreateInput["bowlingStyle"];
+
+    await prisma.player.create({ data: pdata });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { systemRole: "PLAYER" },
+    });
+
+    const authHeader = req.headers.get("authorization");
+    const oldToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+    const newToken = await signAccessToken({
+      userId: user.id,
+      email: user.email,
+      systemRole: "PLAYER",
+    });
+    if (oldToken) {
+      await prisma.session.updateMany({
+        where: { userId: user.id, token: oldToken },
+        data: { token: newToken },
+      });
+    }
+
+    const updatedUser = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    const authResponse = await buildAuthResponse(updatedUser, newToken);
+    return { status: 201, body: successResponse(authResponse, "Player profile linked") };
+  } catch (error) {
+    return {
+      status: 500,
+      body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to create player profile")),
     };
   }
 }

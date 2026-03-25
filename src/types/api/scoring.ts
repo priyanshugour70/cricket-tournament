@@ -34,6 +34,10 @@ export interface AddBallRequest {
   isFour?: boolean;
   isSix?: boolean;
   isFreeHit?: boolean;
+  /** Appended to auto-generated ball commentary */
+  commentaryNote?: string;
+  /** Skip creating the automatic commentary line for this ball */
+  skipAutoCommentary?: boolean;
 }
 
 export interface BallItem {

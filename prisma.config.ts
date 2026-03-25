@@ -8,6 +8,9 @@ const fallbackDatabaseUrl =
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
+  migrations: {
+    seed: "pnpm run seed",
+  },
   datasource: {
     url: process.env.DATABASE_URL ?? fallbackDatabaseUrl,
   },

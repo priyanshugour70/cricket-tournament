@@ -12,6 +12,7 @@ enum SystemRole {
   SUPER_ADMIN
   ADMIN
   USER
+  PLAYER
 }
 
 enum TournamentRole {
@@ -220,9 +221,32 @@ model User {
 
   sessions           Session[]
   tournamentAccesses UserTournamentAccess[]
+  linkedPlayer       Player?
 
   @@index([email])
   @@index([systemRole, isActive])
+}
+
+/// Fine-grained keys (e.g. admin.users.read) assigned per SystemRole — editable from the dashboard.
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roleGrants SystemRolePermission[]
+}
+
+model SystemRolePermission {
+  id           String     @id @default(cuid())
+  systemRole   SystemRole
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([systemRole, permissionId])
+  @@index([systemRole])
 }
 
 model Session {
@@ -311,6 +335,7 @@ model Tournament {
   teamSquadPlayers    TeamSquadPlayer[]
   pointsTable         PointsTableEntry[]
   userAccesses        UserTournamentAccess[]
+  settings            TournamentSettings?
 
   @@unique([name, season])
   @@index([status])
@@ -368,6 +393,7 @@ model Team {
 
 model Player {
   id               String        @id @default(cuid())
+  userId           String?       @unique
   code             String?       @unique
   firstName        String
   lastName         String?
@@ -401,6 +427,7 @@ model Player {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
+  user          User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
   registrations TournamentPlayerRegistration[]
   auctionBids   AuctionBid[]
   squadEntries  TeamSquadPlayer[]
@@ -762,4 +789,56 @@ model Asset {
   size        Int?
   uploadedBy  String?
   createdAt   DateTime @default(now())
+}
+
+// ─── Match Playing XI ────────────────────────────────────────────────────
+
+model MatchPlayingXI {
+  id             String   @id @default(cuid())
+  matchId        String
+  teamId         String
+  playerId       String
+  slotNo         Int
+  role           String?
+  isCaptain      Boolean  @default(false)
+  isViceCaptain  Boolean  @default(false)
+  isWicketKeeper Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@unique([matchId, teamId, playerId])
+  @@unique([matchId, teamId, slotNo])
+  @@index([matchId, teamId])
+}
+
+// ─── Tournament Settings ─────────────────────────────────────────────────
+
+model TournamentSettings {
+  id                  String   @id @default(cuid())
+  tournamentId        String   @unique
+  autoSchedule        Boolean  @default(false)
+  allowLateReg        Boolean  @default(false)
+  requireApproval     Boolean  @default(true)
+  enableLiveScoring   Boolean  @default(true)
+  enableCommentary    Boolean  @default(true)
+  enableNotifications Boolean  @default(true)
+  emailOnRegistration Boolean  @default(true)
+  emailOnApproval     Boolean  @default(true)
+  emailOnMatchResult  Boolean  @default(false)
+  publicScoreboard    Boolean  @default(true)
+  showPlayerStats     Boolean  @default(true)
+  showTeamFinances    Boolean  @default(false)
+  auctionBidTimeSec   Int      @default(30)
+  auctionMinIncrement Decimal  @default(10) @db.Decimal(14, 2)
+  matchDlsEnabled     Boolean  @default(false)
+  powerplayEnd        Int      @default(6)
+  middleOversEnd      Int      @default(15)
+  maxOversPerBowler   Int      @default(4)
+  freeHitOnNoBall     Boolean  @default(true)
+  wideRunPenalty      Int      @default(1)
+  noBallRunPenalty    Int      @default(1)
+  customRules         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 }

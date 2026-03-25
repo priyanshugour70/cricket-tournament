@@ -55,6 +55,52 @@ export interface UpdateMatchResultRequest {
   pointsAway?: number;
 }
 
+export interface MatchDetail extends MatchListItem {
+  homeTeamCode: string;
+  awayTeamCode: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  tossWonByTeamId: string | null;
+  tossDecision: TossDecision | null;
+  winMarginRuns: number | null;
+  winMarginWickets: number | null;
+  pointsHome: string | null;
+  pointsAway: string | null;
+  oversPerSide: string;
+  umpire1: string | null;
+  umpire2: string | null;
+  thirdUmpire: string | null;
+  referee: string | null;
+  highlights: string | null;
+}
+
+export interface PlayingXIItem {
+  id: string;
+  matchId: string;
+  teamId: string;
+  playerId: string;
+  playerName: string;
+  slotNo: number;
+  role: string | null;
+  isCaptain: boolean;
+  isViceCaptain: boolean;
+  isWicketKeeper: boolean;
+}
+
+export interface SetPlayingXIRequest {
+  teamId: string;
+  players: Array<{
+    playerId: string;
+    slotNo: number;
+    role?: string;
+    isCaptain?: boolean;
+    isViceCaptain?: boolean;
+    isWicketKeeper?: boolean;
+  }>;
+}
+
+export type MatchDetailResponse = APIResponse<MatchDetail>;
+export type PlayingXIResponse = APIResponse<PlayingXIItem[]>;
 export type ListMatchesResponse = APIResponse<MatchListItem[]>;
 export type CreateMatchResponse = APIResponse<MatchListItem>;
 export type UpdateMatchResultResponse = APIResponse<MatchListItem>;

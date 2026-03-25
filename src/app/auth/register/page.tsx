@@ -34,6 +34,8 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
   });
+  const [createPlayerProfile, setCreatePlayerProfile] = useState(false);
+  const [playerRole, setPlayerRole] = useState("BATTER");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -67,6 +69,16 @@ export default function RegisterPage() {
           displayName: form.displayName,
           email: form.email,
           password: form.password,
+          ...(createPlayerProfile
+            ? {
+                registerAsPlayer: true,
+                linkedPlayerProfile: {
+                  role: playerRole,
+                  battingStyle: "RIGHT_HAND",
+                  bowlingStyle: "RIGHT_ARM_MEDIUM",
+                },
+              }
+            : {}),
         }),
       });
 
@@ -181,6 +193,38 @@ export default function RegisterPage() {
                   required
                   autoComplete="new-password"
                 />
+              </div>
+              <div className="rounded-lg border border-border p-4">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 rounded border-input"
+                    checked={createPlayerProfile}
+                    onChange={(e) => setCreatePlayerProfile(e.target.checked)}
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">Also create my player profile</span>
+                    <span className="mt-0.5 block text-muted-foreground">
+                      Links one cricket player record to this login — same identity for squads, scoring, and tournament registration.
+                    </span>
+                  </span>
+                </label>
+                {createPlayerProfile && (
+                  <div className="mt-3 space-y-2 pl-7">
+                    <Label htmlFor="playerRole">On-field role</Label>
+                    <select
+                      id="playerRole"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={playerRole}
+                      onChange={(e) => setPlayerRole(e.target.value)}
+                    >
+                      <option value="BATTER">Batter</option>
+                      <option value="BOWLER">Bowler</option>
+                      <option value="ALL_ROUNDER">All rounder</option>
+                      <option value="WICKET_KEEPER">Wicket keeper</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}

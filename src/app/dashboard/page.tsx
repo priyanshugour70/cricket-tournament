@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trophy, Plus, LogOut, ChevronRight } from "lucide-react";
+import { Trophy, Plus, LogOut, ChevronRight, UserCircle, Shield } from "lucide-react";
 import {
   Button,
   Badge,
@@ -20,7 +20,7 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, tournamentAccesses, isAuthenticated, isLoading, logout } =
+  const { user, tournamentAccesses, linkedPlayer, hasPermission, isAuthenticated, isLoading, logout } =
     useAuth();
 
   useEffect(() => {
@@ -99,6 +99,52 @@ export default function DashboardPage() {
       </div>
 
       <Separator className="my-8" />
+
+      {hasPermission("admin.access") && (
+        <div className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold">Platform administration</h2>
+          <Link href="/dashboard/administrative">
+            <Card className="transition-shadow hover:shadow-md">
+              <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                  <Shield className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-base">Administration</CardTitle>
+                  <CardDescription>Users, roles, and permission matrix</CardDescription>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </CardHeader>
+            </Card>
+          </Link>
+        </div>
+      )}
+
+      {linkedPlayer && (
+        <div className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold">Player profile</h2>
+          <Link href="/dashboard/player">
+            <Card className="transition-shadow hover:shadow-md">
+              <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                  <UserCircle className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-base">My career</CardTitle>
+                  <CardDescription className="truncate">
+                    {linkedPlayer.displayName}
+                    {linkedPlayer.code ? ` · ${linkedPlayer.code}` : ""}
+                  </CardDescription>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <Badge variant="secondary">{linkedPlayer.role.replace(/_/g, " ")}</Badge>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      )}
 
       <div>
         <h2 className="mb-4 text-lg font-semibold">Your Tournaments</h2>

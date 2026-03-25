@@ -10,6 +10,7 @@ import type {
   CreateTeamRequest,
   CreateTournamentRequest,
   RegisterPlayerRequest,
+  TeamDetail,
   TeamListItem,
   TournamentDetails,
   TournamentListItem,
@@ -330,7 +331,11 @@ export async function updateTournamentStatus(tournamentId: string, payload: unkn
   }
 }
 
-export async function registerTournamentPlayer(tournamentId: string, payload: unknown) {
+export async function registerTournamentPlayer(
+  tournamentId: string,
+  payload: unknown,
+  authUserId: string | null = null,
+) {
   try {
     const body = asRecord(payload);
     const request: RegisterPlayerRequest = {
@@ -351,20 +356,56 @@ export async function registerTournamentPlayer(tournamentId: string, payload: un
       expectedPrice: safeNumber(body.expectedPrice),
       registrationNumber: safeString(body.registrationNumber),
     };
-    if (!request.displayName || !request.role) {
+
+    const linked =
+      authUserId
+        ? await prisma.user
+            .findUnique({
+              where: { id: authUserId },
+              select: {
+                linkedPlayer: {
+                  select: { id: true, displayName: true, role: true, userId: true },
+                },
+              },
+            })
+            .then((u) => u?.linkedPlayer ?? null)
+        : null;
+
+    if (linked && request.playerId && request.playerId !== linked.id) {
+      return {
+        status: 403,
+        body: errorResponse(ErrorCodes.FORBIDDEN, "You can only register using your linked player profile"),
+      };
+    }
+
+    const effectivePlayerId = request.playerId ?? linked?.id;
+    const displayName = request.displayName || linked?.displayName || "";
+    const role = (request.role ?? linked?.role) as RegisterPlayerRequest["role"] | undefined;
+
+    if (!displayName || !role) {
       return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "displayName and role are required") };
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const player = request.playerId ? await tx.player.findUnique({ where: { id: request.playerId } }) : null;
-      const upsertedPlayer =
-        player ??
-        (await tx.player.create({
+      let upsertedPlayer = effectivePlayerId
+        ? await tx.player.findUnique({ where: { id: effectivePlayerId } })
+        : null;
+
+      if (effectivePlayerId && !upsertedPlayer) {
+        throw new Error("NOT_FOUND_PLAYER");
+      }
+
+      if (authUserId && upsertedPlayer && upsertedPlayer.userId && upsertedPlayer.userId !== authUserId) {
+        throw new Error("FORBIDDEN_PLAYER");
+      }
+
+      if (!upsertedPlayer) {
+        upsertedPlayer = await tx.player.create({
           data: {
-            firstName: request.firstName ?? request.displayName,
+            firstName: request.firstName ?? displayName,
             lastName: request.lastName,
-            displayName: request.displayName,
-            role: request.role,
+            displayName,
+            role,
             battingStyle: request.battingStyle,
             bowlingStyle: request.bowlingStyle,
             isOverseas: request.isOverseas,
@@ -375,7 +416,26 @@ export async function registerTournamentPlayer(tournamentId: string, payload: un
             reservePrice: request.reservePrice,
             basePrice: request.basePrice,
           },
-        }));
+        });
+      } else {
+        await tx.player.update({
+          where: { id: upsertedPlayer.id },
+          data: {
+            displayName: request.displayName || upsertedPlayer.displayName,
+            role: request.role ?? upsertedPlayer.role,
+            battingStyle: request.battingStyle ?? upsertedPlayer.battingStyle,
+            bowlingStyle: request.bowlingStyle ?? upsertedPlayer.bowlingStyle,
+            isOverseas: request.isOverseas,
+            isWicketKeeper: request.isWicketKeeper,
+            nationality: request.nationality ?? upsertedPlayer.nationality,
+            state: request.state ?? upsertedPlayer.state,
+            city: request.city ?? upsertedPlayer.city,
+            reservePrice: request.reservePrice ?? upsertedPlayer.reservePrice,
+            basePrice: request.basePrice ?? upsertedPlayer.basePrice,
+          },
+        });
+        upsertedPlayer = await tx.player.findUniqueOrThrow({ where: { id: upsertedPlayer.id } });
+      }
 
       return tx.tournamentPlayerRegistration.create({
         data: {
@@ -392,10 +452,129 @@ export async function registerTournamentPlayer(tournamentId: string, payload: un
 
     return { status: 201, body: successResponse(mapTournamentPlayer(result), "Player registered to tournament") };
   } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND_PLAYER") {
+      return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Player not found") };
+    }
+    if (error instanceof Error && error.message === "FORBIDDEN_PLAYER") {
+      return { status: 403, body: errorResponse(ErrorCodes.FORBIDDEN, "This player profile belongs to another account") };
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return { status: 409, body: errorResponse(ErrorCodes.ALREADY_EXISTS, "Player is already registered in this tournament") };
     }
     return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to register player")) };
+  }
+}
+
+function mapTeamDetail(team: {
+  id: string; tournamentId: string; code: string; name: string; shortName: string | null;
+  status: TeamListItem["status"]; city: string | null; ownerName: string | null;
+  managerName: string | null; coachName: string | null; captainName: string | null;
+  homeGround: string | null; logoUrl: string | null; primaryColor: string | null;
+  secondaryColor: string | null; retainedCount: number; squadMin: number; squadMax: number;
+  overseasMin: number; overseasMax: number; contactEmail: string | null; contactPhone: string | null;
+  purseTotal: Prisma.Decimal; purseSpent: Prisma.Decimal; purseRemaining: Prisma.Decimal;
+  createdAt: Date; updatedAt: Date;
+  _count: { squadPlayers: number };
+}): TeamDetail {
+  return {
+    ...mapTeamItem(team),
+    ownerName: team.ownerName,
+    managerName: team.managerName,
+    coachName: team.coachName,
+    captainName: team.captainName,
+    homeGround: team.homeGround,
+    logoUrl: team.logoUrl,
+    primaryColor: team.primaryColor,
+    secondaryColor: team.secondaryColor,
+    retainedCount: team.retainedCount,
+    squadMin: team.squadMin,
+    squadMax: team.squadMax,
+    overseasMin: team.overseasMin,
+    overseasMax: team.overseasMax,
+    contactEmail: team.contactEmail,
+    contactPhone: team.contactPhone,
+    createdAt: team.createdAt.toISOString(),
+    updatedAt: team.updatedAt.toISOString(),
+  };
+}
+
+export async function getTeamDetail(tournamentId: string, teamId: string) {
+  try {
+    const team = await prisma.team.findFirst({
+      where: { id: teamId, tournamentId },
+      include: { _count: { select: { squadPlayers: true } } },
+    });
+    if (!team) return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Team not found") };
+    return { status: 200, body: successResponse(mapTeamDetail(team)) };
+  } catch (error) {
+    return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to fetch team")) };
+  }
+}
+
+export async function updateTeam(tournamentId: string, teamId: string, payload: unknown) {
+  try {
+    const body = asRecord(payload);
+    const data: Record<string, unknown> = {};
+    const strFields = ["name", "shortName", "ownerName", "managerName", "coachName", "captainName", "city", "homeGround", "logoUrl", "primaryColor", "secondaryColor", "contactEmail", "contactPhone"] as const;
+    for (const k of strFields) {
+      const v = safeString(body[k]);
+      if (v !== undefined) data[k] = v;
+    }
+    if (body.status && typeof body.status === "string") data.status = body.status;
+
+    const existing = await prisma.team.findFirst({ where: { id: teamId, tournamentId } });
+    if (!existing) return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Team not found") };
+
+    const updated = await prisma.team.update({
+      where: { id: teamId },
+      data,
+      include: { _count: { select: { squadPlayers: true } } },
+    });
+    return { status: 200, body: successResponse(mapTeamDetail(updated), "Team updated") };
+  } catch (error) {
+    return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to update team")) };
+  }
+}
+
+export async function updateTournament(tournamentId: string, payload: unknown) {
+  try {
+    const body = asRecord(payload);
+    const data: Record<string, unknown> = {};
+    const strFields = ["name", "shortName", "description", "logoUrl", "bannerUrl", "organizerName", "organizerEmail", "organizerPhone", "venueCity", "country", "timezone", "notes"] as const;
+    for (const k of strFields) {
+      const v = safeString(body[k]);
+      if (v !== undefined) data[k] = v;
+    }
+    const numFields = ["maxTeams", "minSquadSize", "maxSquadSize", "overseasLimit", "retentionLimit"] as const;
+    for (const k of numFields) {
+      const v = safeNumber(body[k]);
+      if (v !== undefined) data[k] = v;
+    }
+    const decFields = ["matchOvers", "powerplayOvers", "pointsForWin", "pointsForTie", "pointsForNR"] as const;
+    for (const k of decFields) {
+      const v = safeNumber(body[k]);
+      if (v !== undefined) data[k] = v;
+    }
+    const dateFields = ["registrationOpen", "registrationClose", "auctionStartDate", "startsOn", "endsOn"] as const;
+    for (const k of dateFields) {
+      const d = safeDate(body[k]);
+      if (d) data[k] = d;
+    }
+    if (typeof body.nrrEnabled === "boolean") data.nrrEnabled = body.nrrEnabled;
+    if (typeof body.isPublic === "boolean") data.isPublic = body.isPublic;
+    if (body.status && typeof body.status === "string") data.status = body.status;
+
+    const existing = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!existing) return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Tournament not found") };
+
+    const updated = await prisma.tournament.update({
+      where: { id: tournamentId },
+      data,
+      include: { _count: { select: { teams: true, playerRegistrations: true, matches: true } } },
+    });
+    return { status: 200, body: successResponse(mapTournamentDetails(updated), "Tournament updated") };
+  } catch (error) {
+    return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to update tournament")) };
   }
 }
 

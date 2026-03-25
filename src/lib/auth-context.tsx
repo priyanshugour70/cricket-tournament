@@ -18,6 +18,7 @@ import {
 import type {
   AuthResponse,
   AuthUser,
+  LinkedPlayerSummary,
   TournamentAccessItem,
 } from "@/types/api/auth";
 
@@ -25,6 +26,10 @@ interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   tournamentAccesses: TournamentAccessItem[];
+  linkedPlayer: LinkedPlayerSummary | null;
+  /** Permission keys for the current user's system role (RBAC). */
+  permissions: string[];
+  hasPermission: (key: string) => boolean;
   isAuthenticated: boolean;
   login: (data: AuthResponse) => void;
   logout: () => Promise<void>;
@@ -45,6 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tournamentAccesses, setTournamentAccesses] = useState<
     TournamentAccessItem[]
   >([]);
+  const [linkedPlayer, setLinkedPlayer] = useState<LinkedPlayerSummary | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const refreshTokenRef = useRef<string | null>(null);
 
@@ -67,6 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(data.user);
       setToken(data.token);
       setTournamentAccesses(data.tournamentAccesses);
+      setLinkedPlayer(data.linkedPlayer ?? null);
+      setPermissions(data.permissions ?? []);
       persistTokens(data);
     },
     [persistTokens],
@@ -108,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(res.data.user);
         setToken(res.data.token);
         setTournamentAccesses(res.data.tournamentAccesses);
+        setLinkedPlayer(res.data.linkedPlayer ?? null);
+        setPermissions(res.data.permissions ?? []);
       } catch {
         if (!storedRefresh) {
           if (!cancelled) {
@@ -115,6 +126,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setToken(null);
             setTournamentAccesses([]);
+            setLinkedPlayer(null);
+            setPermissions([]);
           }
         } else {
           try {
@@ -127,6 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(null);
               setToken(null);
               setTournamentAccesses([]);
+              setLinkedPlayer(null);
+              setPermissions([]);
             }
           }
         }
@@ -169,6 +184,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setToken(null);
       setTournamentAccesses([]);
+      setLinkedPlayer(null);
+      setPermissions([]);
       clearStorage();
     }
   }, [clearStorage]);
@@ -178,16 +195,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       token,
       tournamentAccesses,
+      linkedPlayer,
+      permissions,
+      hasPermission: (key: string) => permissions.includes(key),
       isAuthenticated: !!user,
       login,
       logout,
       isLoading,
       refreshSession,
     }),
-    [user, token, tournamentAccesses, login, logout, isLoading, refreshSession],
+    [user, token, tournamentAccesses, linkedPlayer, permissions, login, logout, isLoading, refreshSession],
   );
 
-  return <AuthContext value={value}>{children}</AuthContext>;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

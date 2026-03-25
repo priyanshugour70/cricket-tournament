@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -16,10 +16,19 @@ import {
   Badge,
 } from "@/components/ui";
 import type { APIResponse } from "@/types";
+import { useAuth } from "@/lib/auth-context";
+
+function authHeaders(): Record<string, string> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+}
 
 export default function TournamentPlayerRegistrationPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { linkedPlayer, isAuthenticated, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -34,6 +43,16 @@ export default function TournamentPlayerRegistrationPage() {
     registrationNumber: "",
   });
 
+  useEffect(() => {
+    if (linkedPlayer) {
+      setForm((p) => ({
+        ...p,
+        displayName: linkedPlayer.displayName,
+        role: linkedPlayer.role,
+      }));
+    }
+  }, [linkedPlayer]);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -41,6 +60,7 @@ export default function TournamentPlayerRegistrationPage() {
     setSuccess(null);
     try {
       const payload = {
+        ...(linkedPlayer ? { playerId: linkedPlayer.id } : {}),
         firstName: form.firstName,
         lastName: form.lastName || undefined,
         displayName: form.displayName,
@@ -52,7 +72,7 @@ export default function TournamentPlayerRegistrationPage() {
       };
       const res = await fetch(`/api/tournaments/${id}/players`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(payload),
       });
       const json = (await res.json()) as APIResponse;
@@ -87,28 +107,49 @@ export default function TournamentPlayerRegistrationPage() {
           <CardTitle>Register Yourself as a Player</CardTitle>
         </CardHeader>
         <CardContent>
+          {linkedPlayer && (
+            <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+              <p className="font-medium">Signed in with linked player</p>
+              <p className="mt-1 text-muted-foreground">
+                You are registering as <strong>{linkedPlayer.displayName}</strong>
+                {linkedPlayer.code ? ` (${linkedPlayer.code})` : ""}. Updates below apply to that profile.
+              </p>
+            </div>
+          )}
+          {!authLoading && !isAuthenticated && (
+            <p className="mb-4 text-sm text-muted-foreground">
+              <Link href="/auth/login" className="font-medium text-primary hover:underline">
+                Sign in
+              </Link>{" "}
+              to attach this registration to your linked player automatically.
+            </p>
+          )}
           <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
-            <div className="space-y-2">
-              <Label htmlFor="firstName">First name</Label>
-              <Input
-                id="firstName"
-                value={form.firstName}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, firstName: e.target.value }))
-                }
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last name</Label>
-              <Input
-                id="lastName"
-                value={form.lastName}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, lastName: e.target.value }))
-                }
-              />
-            </div>
+            {!linkedPlayer && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First name</Label>
+                  <Input
+                    id="firstName"
+                    value={form.firstName}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, firstName: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last name</Label>
+                  <Input
+                    id="lastName"
+                    value={form.lastName}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, lastName: e.target.value }))
+                    }
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="displayName">Display name</Label>
               <Input
@@ -118,6 +159,7 @@ export default function TournamentPlayerRegistrationPage() {
                   setForm((p) => ({ ...p, displayName: e.target.value }))
                 }
                 required
+                disabled={Boolean(linkedPlayer)}
               />
             </div>
             <div className="space-y-2">

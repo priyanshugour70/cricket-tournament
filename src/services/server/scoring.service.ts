@@ -209,6 +209,8 @@ export async function addBall(inningsId: string, payload: unknown) {
       isFour: Boolean(body.isFour),
       isSix: Boolean(body.isSix),
       isFreeHit: Boolean(body.isFreeHit),
+      commentaryNote: safeString(body.commentaryNote),
+      skipAutoCommentary: Boolean(body.skipAutoCommentary),
     };
 
     if (!request.overNo || !request.batsmanId || !request.bowlerId) {
@@ -265,6 +267,39 @@ export async function addBall(inningsId: string, payload: unknown) {
           status: "IN_PROGRESS",
         },
       });
+
+      if (!request.skipAutoCommentary) {
+        const [bat, bowl] = await Promise.all([
+          tx.player.findUnique({ where: { id: request.batsmanId }, select: { displayName: true } }),
+          tx.player.findUnique({ where: { id: request.bowlerId }, select: { displayName: true } }),
+        ]);
+        const bn = bat?.displayName ?? "Batsman";
+        const bw = bowl?.displayName ?? "Bowler";
+        let text: string;
+        if (request.isWicket) {
+          text = `${request.overNo}.${request.ballNo} WICKET — ${bn} ${request.dismissalType?.replace(/_/g, " ").toLowerCase() ?? "out"}`;
+        } else if (request.isExtra) {
+          text = `${request.overNo}.${request.ballNo} ${request.extraType ?? "Extra"} — ${ballTotalRuns} run(s). ${bn} facing ${bw}`;
+        } else if (ballTotalRuns === 0) {
+          text = `${request.overNo}.${request.ballNo} Dot — ${bw} to ${bn}`;
+        } else if (request.isSix) {
+          text = `${request.overNo}.${request.ballNo} SIX! ${bn} off ${bw}`;
+        } else if (request.isFour) {
+          text = `${request.overNo}.${request.ballNo} FOUR! ${bn} off ${bw}`;
+        } else {
+          text = `${request.overNo}.${request.ballNo} ${ballTotalRuns} run(s) — ${bn} off ${bw}`;
+        }
+        if (request.commentaryNote) text = `${text} · ${request.commentaryNote}`;
+        await tx.commentary.create({
+          data: {
+            inningsId,
+            overNo: request.overNo,
+            ballNo: request.ballNo,
+            text,
+            isHighlight: Boolean(request.isFour || request.isSix || request.isWicket),
+          },
+        });
+      }
 
       return ball;
     });

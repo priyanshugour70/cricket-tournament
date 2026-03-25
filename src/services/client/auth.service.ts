@@ -2,6 +2,7 @@ import { apiPost } from "@/services/client/api-client";
 import { getErrorMessage } from "@/types";
 import type {
   AuthResponse,
+  CreatePlayerProfileRequest,
   LoginRequest,
   LoginResponse,
   MeResponse,
@@ -40,6 +41,25 @@ export async function refreshTokenRequest(
   return apiPost<AuthResponse, { refreshToken: string }>("/api/auth/refresh", {
     refreshToken,
   });
+}
+
+export async function createPlayerProfileRequest(
+  token: string,
+  payload: CreatePlayerProfileRequest,
+): Promise<RegisterResponse> {
+  const response = await fetch("/api/auth/player-profile", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const json = (await response.json().catch(() => ({}))) as RegisterResponse;
+  if (!response.ok || !json.success) {
+    throw new Error(getErrorMessage(json, "Request failed"));
+  }
+  return json;
 }
 
 export async function logoutRequest(

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSessionFromRequest } from "@/lib/auth";
 import {
   listTournamentPlayers,
   registerTournamentPlayer,
@@ -15,7 +16,8 @@ export async function GET(_req: Request, { params }: Params) {
 export async function POST(req: Request, { params }: Params) {
   const { id } = await params;
   const payload = await req.json().catch(() => ({}));
-  const result = await registerTournamentPlayer(id, payload);
+  const session = await getSessionFromRequest(req);
+  const result = await registerTournamentPlayer(id, payload, session?.userId ?? null);
   return NextResponse.json(result.body, { status: result.status });
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from "react";
 import { use } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Loader2, Swords } from "lucide-react";
 import {
   Button,
@@ -59,6 +60,7 @@ export default function MatchesPage({
   params: Promise<{ tournamentId: string }>;
 }) {
   const { tournamentId } = use(params);
+  const router = useRouter();
   const [matches, setMatches] = useState<Match[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
@@ -277,7 +279,8 @@ export default function MatchesPage({
             </TableHeader>
             <TableBody>
               {matches.map((m) => (
-                <TableRow key={m.id}>
+                <TableRow key={m.id} className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/dashboard/${tournamentId}/matches/${m.id}`)}>
                   <TableCell className="font-mono text-xs">
                     {m.matchNo}
                   </TableCell>
