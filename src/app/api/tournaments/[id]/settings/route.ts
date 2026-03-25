@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { getSettings, updateSettings } from "@/services/server/settings.service";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -8,6 +9,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(req);
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   const payload = await req.json().catch(() => ({}));
   const result = await updateSettings(id, payload);

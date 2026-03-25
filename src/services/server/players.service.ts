@@ -331,19 +331,26 @@ export async function getPlayerCareer(playerId: string) {
 
     const allBat = await prisma.ballByBall.findMany({
       where: { batsmanId: playerId },
-      select: { runs: true, isFour: true, isSix: true },
+      select: { runs: true, isFour: true, isSix: true, isExtra: true, extraType: true },
     });
 
     const runsOffBat = allBat.reduce((s, b) => s + b.runs, 0);
     const fours = allBat.filter((b) => b.isFour).length;
     const sixes = allBat.filter((b) => b.isSix).length;
-    const ballsAsBatsman = allBat.length;
+    // #21: Exclude illegal deliveries (wides/no-balls) from balls faced
+    const ballsAsBatsman = allBat.filter(
+      (b) => !b.isExtra || (b.extraType !== "WIDE" && b.extraType !== "NO_BALL"),
+    ).length;
 
     const allBowl = await prisma.ballByBall.findMany({
       where: { bowlerId: playerId },
-      select: { runs: true, isWicket: true, isExtra: true },
+      select: { runs: true, isWicket: true, isExtra: true, dismissalType: true },
     });
-    const wicketsAsBowler = allBowl.filter((b) => b.isWicket).length;
+    // #11: Exclude non-bowler dismissals (run-outs, retired, obstructing, timed-out, handled-ball) from bowler wickets
+    const NON_BOWLER_DISMISSALS = new Set(["RUN_OUT", "RETIRED_HURT", "RETIRED_OUT", "OBSTRUCTING_FIELD", "TIMED_OUT", "HANDLED_BALL"]);
+    const wicketsAsBowler = allBowl.filter(
+      (b) => b.isWicket && !NON_BOWLER_DISMISSALS.has(b.dismissalType ?? ""),
+    ).length;
     const ballsAsBowler = allBowl.length;
     const runsConcededOffBat = allBowl.reduce((s, b) => s + b.runs, 0);
 

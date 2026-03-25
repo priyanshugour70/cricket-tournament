@@ -11,6 +11,7 @@ import type {
   MatchListItem,
   UpdateMatchResultRequest,
 } from "@/types/api/matches";
+import { recalculatePointsTable } from "./points-table.service";
 
 function asRecord(payload: unknown): Record<string, unknown> {
   if (payload && typeof payload === "object") return payload as Record<string, unknown>;
@@ -179,6 +180,11 @@ export async function updateMatchResult(tournamentId: string, matchId: string, p
       return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Match not found in this tournament") };
     }
 
+    // #37: Validate winningTeamId belongs to the match
+    if (request.winningTeamId && request.winningTeamId !== existing.homeTeamId && request.winningTeamId !== existing.awayTeamId) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "winningTeamId must be one of the match's teams") };
+    }
+
     const updated = await prisma.match.update({
       where: { id: matchId },
       data: {
@@ -196,6 +202,12 @@ export async function updateMatchResult(tournamentId: string, matchId: string, p
       },
       include: matchInclude,
     });
+
+    // #20: Auto-recalculate points table when match is completed
+    if (request.status === "COMPLETED") {
+      recalculatePointsTable(tournamentId).catch(() => {});
+    }
+
     return { status: 200, body: successResponse(mapMatchListItem(updated), "Match result updated") };
   } catch (error) {
     return { status: 500, body: errorResponse(ErrorCodes.INTERNAL_ERROR, getErrorMessage(error, "Unable to update match result")) };

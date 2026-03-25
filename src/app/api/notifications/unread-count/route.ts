@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { getUnreadCount } from "@/services/server/notifications.service";
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const userId = searchParams.get("userId") ?? "";
-  const result = await getUnreadCount(userId);
+  const auth = await requireAuth(req);
+  if (!auth.ok) return auth.response;
+  const result = await getUnreadCount(auth.session.userId);
   return NextResponse.json(result.body, { status: result.status });
 }

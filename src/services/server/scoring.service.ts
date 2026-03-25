@@ -30,6 +30,13 @@ function safeNumber(v: unknown): number | undefined {
   return undefined;
 }
 
+const VALID_EXTRA_TYPES = new Set(["WIDE", "NO_BALL", "BYE", "LEG_BYE", "PENALTY"]);
+const VALID_DISMISSAL_TYPES = new Set([
+  "BOWLED", "CAUGHT", "LBW", "RUN_OUT", "STUMPED", "HIT_WICKET",
+  "RETIRED_HURT", "RETIRED_OUT", "OBSTRUCTING_FIELD", "TIMED_OUT", "HANDLED_BALL",
+]);
+const NON_BOWLER_DISMISSALS = new Set(["RUN_OUT", "RETIRED_HURT", "RETIRED_OUT", "OBSTRUCTING_FIELD", "TIMED_OUT", "HANDLED_BALL"]);
+
 function mapInningsItem(item: {
   id: string;
   matchId: string;
@@ -114,6 +121,27 @@ function mapCommentaryItem(item: {
   };
 }
 
+async function getTournamentSettingsForMatch(matchId: string) {
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    select: { tournamentId: true, oversPerSide: true },
+  });
+  if (!match) return null;
+
+  const settings = await prisma.tournamentSettings.findUnique({
+    where: { tournamentId: match.tournamentId },
+  });
+
+  return {
+    matchOvers: Number(match.oversPerSide),
+    maxOversPerBowler: settings?.maxOversPerBowler ?? 4,
+    wideRunPenalty: settings?.wideRunPenalty ?? 1,
+    noBallRunPenalty: settings?.noBallRunPenalty ?? 1,
+    freeHitOnNoBall: settings?.freeHitOnNoBall ?? true,
+    powerplayEnd: settings?.powerplayEnd ?? 6,
+  };
+}
+
 export async function listInnings(matchId: string) {
   try {
     const match = await prisma.match.findUnique({
@@ -167,6 +195,15 @@ export async function createInnings(matchId: string, payload: unknown) {
       return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Match not found") };
     }
 
+    // #19: Validate team IDs belong to this match
+    const validTeamIds = new Set([match.homeTeam.id, match.awayTeam.id]);
+    if (!validTeamIds.has(battingTeamId)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "battingTeamId does not belong to this match") };
+    }
+    if (!validTeamIds.has(bowlingTeamId)) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "bowlingTeamId does not belong to this match") };
+    }
+
     const created = await prisma.innings.create({
       data: { matchId, inningsNo, battingTeamId, bowlingTeamId },
     });
@@ -193,7 +230,7 @@ export async function addBall(inningsId: string, payload: unknown) {
   try {
     const body = asRecord(payload);
     const request: AddBallRequest = {
-      overNo: safeNumber(body.overNo) ?? 0,
+      overNo: safeNumber(body.overNo) ?? -1,
       ballNo: safeNumber(body.ballNo) ?? 0,
       batsmanId: safeString(body.batsmanId) ?? "",
       bowlerId: safeString(body.bowlerId) ?? "",
@@ -213,12 +250,121 @@ export async function addBall(inningsId: string, payload: unknown) {
       skipAutoCommentary: Boolean(body.skipAutoCommentary),
     };
 
-    if (!request.overNo || !request.batsmanId || !request.bowlerId) {
-      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "overNo, batsmanId and bowlerId are required") };
+    // #15: Allow overNo >= 0 (over 0 is the first over) and validate ballNo 1-10
+    if (request.overNo < 0 || !request.batsmanId || !request.bowlerId) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "overNo (>=0), batsmanId and bowlerId are required") };
+    }
+    if (request.ballNo < 1 || request.ballNo > 10) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "ballNo must be between 1 and 10") };
     }
 
-    const ballTotalRuns = request.runs + (request.extraRuns ?? 0);
+    // #14: Validate extraType enum and extra combinations
+    if (request.isExtra) {
+      if (!request.extraType || !VALID_EXTRA_TYPES.has(request.extraType)) {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Invalid extraType. Must be one of: WIDE, NO_BALL, BYE, LEG_BYE, PENALTY") };
+      }
+      if ((request.extraRuns ?? 0) < 0) {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "extraRuns cannot be negative") };
+      }
+      if ((request.extraType === "WIDE" || request.extraType === "NO_BALL") && (request.extraRuns ?? 0) > 7) {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "extraRuns for wide/no-ball cannot exceed 7 (penalty + overthrows)") };
+      }
+    }
+
+    if (request.runs < 0) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "runs cannot be negative") };
+    }
+
+    // Validate dismissalType if wicket
+    if (request.isWicket) {
+      if (!request.dismissalType || !VALID_DISMISSAL_TYPES.has(request.dismissalType)) {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Invalid dismissalType for wicket") };
+      }
+    }
+
+    const innings = await prisma.innings.findUnique({
+      where: { id: inningsId },
+      include: { match: { select: { id: true, status: true, oversPerSide: true, tournamentId: true } } },
+    });
+    if (!innings) {
+      return { status: 404, body: errorResponse(ErrorCodes.NOT_FOUND, "Innings not found") };
+    }
+
+    // #17: Block scoring on completed matches or innings
+    if (innings.match.status === "COMPLETED") {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Cannot add ball to a completed match") };
+    }
+    if (innings.status === "COMPLETED") {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "Cannot add ball to a completed innings") };
+    }
+
+    // #10: Check wickets cap — cannot exceed 10
+    if (request.isWicket && innings.totalWickets >= 10) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "All 10 wickets have already fallen in this innings") };
+    }
+
+    const matchOvers = Number(innings.match.oversPerSide);
+
+    // #17: Check overs cap — innings is complete when legal balls reach matchOvers * 6
     const isLegalDelivery = !request.isExtra || (request.extraType !== "WIDE" && request.extraType !== "NO_BALL");
+    if (isLegalDelivery && innings.totalBalls >= matchOvers * 6) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `All ${matchOvers} overs have been bowled in this innings`) };
+    }
+
+    // #16: Load tournament settings for penalty calculations
+    const settings = await getTournamentSettingsForMatch(innings.match.id);
+    const wideRunPenalty = settings?.wideRunPenalty ?? 1;
+    const noBallRunPenalty = settings?.noBallRunPenalty ?? 1;
+
+    // #16: Check bowler overs limit
+    if (settings) {
+      const maxBowlerOvers = settings.maxOversPerBowler;
+      const bowlerLegalBalls = await prisma.ballByBall.count({
+        where: {
+          inningsId,
+          bowlerId: request.bowlerId,
+          OR: [
+            { isExtra: false },
+            { extraType: { notIn: ["WIDE", "NO_BALL"] } },
+          ],
+        },
+      });
+      if (isLegalDelivery && bowlerLegalBalls >= maxBowlerOvers * 6) {
+        return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, `This bowler has already bowled ${maxBowlerOvers} overs (max allowed)`) };
+      }
+    }
+
+    // Calculate runs based on extra type with tournament settings penalties
+    let ballTotalRuns = request.runs;
+    let extraRunsForInnings = 0;
+
+    if (request.isExtra) {
+      switch (request.extraType) {
+        case "WIDE":
+          extraRunsForInnings = wideRunPenalty + (request.extraRuns ?? 0);
+          ballTotalRuns = request.runs + extraRunsForInnings;
+          break;
+        case "NO_BALL":
+          extraRunsForInnings = noBallRunPenalty + (request.extraRuns ?? 0);
+          ballTotalRuns = request.runs + extraRunsForInnings;
+          break;
+        case "BYE":
+        case "LEG_BYE":
+          extraRunsForInnings = request.extraRuns ?? 0;
+          ballTotalRuns = request.runs + extraRunsForInnings;
+          break;
+        case "PENALTY":
+          extraRunsForInnings = request.extraRuns ?? 0;
+          ballTotalRuns = extraRunsForInnings;
+          break;
+        default:
+          extraRunsForInnings = request.extraRuns ?? 0;
+          ballTotalRuns = request.runs + extraRunsForInnings;
+      }
+    }
+
+    // #12: Dot ball = no runs AND not a wicket
+    const isDot = ballTotalRuns === 0 && !request.isWicket;
 
     const result = await prisma.$transaction(async (tx) => {
       const ball = await tx.ballByBall.create({
@@ -240,20 +386,38 @@ export async function addBall(inningsId: string, payload: unknown) {
           fielderId: request.fielderId,
           isFour: request.isFour ?? false,
           isSix: request.isSix ?? false,
-          isDot: ballTotalRuns === 0,
+          isDot,
           isFreeHit: request.isFreeHit ?? false,
         },
       });
 
-      const innings = await tx.innings.findUniqueOrThrow({ where: { id: inningsId } });
-      const newTotalRuns = innings.totalRuns + ballTotalRuns;
-      const newTotalBalls = innings.totalBalls + (isLegalDelivery ? 1 : 0);
-      const newWickets = innings.totalWickets + (request.isWicket ? 1 : 0);
-      const newExtras = innings.extras + (request.isExtra ? (request.extraRuns ?? 0) : 0);
+      const currentInnings = await tx.innings.findUniqueOrThrow({ where: { id: inningsId } });
+      const newTotalRuns = currentInnings.totalRuns + ballTotalRuns;
+      const newTotalBalls = currentInnings.totalBalls + (isLegalDelivery ? 1 : 0);
+      const newWickets = currentInnings.totalWickets + (request.isWicket ? 1 : 0);
+      const newExtras = currentInnings.extras + (request.isExtra ? extraRunsForInnings : 0);
+
+      // #13: Update per-type extras breakdown
+      const extraIncrements: { wides?: number; noBalls?: number; byes?: number; legByes?: number; penalties?: number } = {};
+      if (request.isExtra && request.extraType) {
+        switch (request.extraType) {
+          case "WIDE": extraIncrements.wides = currentInnings.wides + extraRunsForInnings; break;
+          case "NO_BALL": extraIncrements.noBalls = currentInnings.noBalls + extraRunsForInnings; break;
+          case "BYE": extraIncrements.byes = currentInnings.byes + extraRunsForInnings; break;
+          case "LEG_BYE": extraIncrements.legByes = currentInnings.legByes + extraRunsForInnings; break;
+          case "PENALTY": extraIncrements.penalties = currentInnings.penalties + extraRunsForInnings; break;
+        }
+      }
+
       const completedOvers = Math.floor(newTotalBalls / 6);
       const remainingBalls = newTotalBalls % 6;
       const totalOvers = completedOvers + remainingBalls / 10;
       const runRate = newTotalBalls > 0 ? (newTotalRuns / (newTotalBalls / 6)) : 0;
+
+      // #17: Auto-complete innings when 10 wickets or all overs bowled
+      const isAllOut = newWickets >= 10;
+      const isAllOversBowled = newTotalBalls >= matchOvers * 6;
+      const shouldComplete = isAllOut || isAllOversBowled;
 
       await tx.innings.update({
         where: { id: inningsId },
@@ -263,8 +427,9 @@ export async function addBall(inningsId: string, payload: unknown) {
           totalWickets: newWickets,
           totalOvers: new Prisma.Decimal(totalOvers.toFixed(1)),
           extras: newExtras,
+          ...extraIncrements,
           runRate: new Prisma.Decimal(runRate.toFixed(2)),
-          status: "IN_PROGRESS",
+          status: shouldComplete ? "COMPLETED" : "IN_PROGRESS",
         },
       });
 
@@ -290,13 +455,19 @@ export async function addBall(inningsId: string, payload: unknown) {
           text = `${request.overNo}.${request.ballNo} ${ballTotalRuns} run(s) — ${bn} off ${bw}`;
         }
         if (request.commentaryNote) text = `${text} · ${request.commentaryNote}`;
+
+        if (shouldComplete) {
+          const reason = isAllOut ? "ALL OUT" : "Innings complete";
+          text = `${text} · ${reason} — ${newTotalRuns}/${newWickets} (${totalOvers.toFixed(1)} ov)`;
+        }
+
         await tx.commentary.create({
           data: {
             inningsId,
             overNo: request.overNo,
             ballNo: request.ballNo,
             text,
-            isHighlight: Boolean(request.isFour || request.isSix || request.isWicket),
+            isHighlight: Boolean(request.isFour || request.isSix || request.isWicket || shouldComplete),
           },
         });
       }
@@ -341,14 +512,14 @@ export async function addCommentary(inningsId: string, payload: unknown) {
   try {
     const body = asRecord(payload);
     const request: AddCommentaryRequest = {
-      overNo: safeNumber(body.overNo) ?? 0,
+      overNo: safeNumber(body.overNo) ?? -1,
       ballNo: safeNumber(body.ballNo),
       text: safeString(body.text) ?? "",
       isHighlight: Boolean(body.isHighlight),
     };
 
-    if (!request.overNo || !request.text) {
-      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "overNo and text are required") };
+    if (request.overNo < 0 || !request.text) {
+      return { status: 400, body: errorResponse(ErrorCodes.VALIDATION_ERROR, "overNo (>=0) and text are required") };
     }
 
     const innings = await prisma.innings.findUnique({ where: { id: inningsId } });

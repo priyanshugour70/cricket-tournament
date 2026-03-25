@@ -292,8 +292,12 @@ export async function getCurrentUser(req: Request) {
       };
     }
 
-    const token = req.headers.get("authorization")!.slice(7);
-    const authResponse = await buildAuthResponse(user, token);
+    const freshToken = await signAccessToken({
+      userId: user.id,
+      email: user.email,
+      systemRole: user.systemRole,
+    });
+    const authResponse = await buildAuthResponse(user, freshToken);
     return { status: 200, body: successResponse(authResponse) };
   } catch (error) {
     return {
@@ -454,18 +458,23 @@ export async function logoutUser(req: Request, payload: unknown) {
     const accessToken =
       authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
+    let deleted = false;
+
     if (refreshFromBody) {
       const decoded = await verifyRefreshToken(refreshFromBody);
       if (decoded) {
-        await prisma.session.deleteMany({
+        const result = await prisma.session.deleteMany({
           where: {
             id: decoded.sessionId,
             userId: decoded.userId,
             refreshToken: refreshFromBody,
           },
         });
+        deleted = result.count > 0;
       }
-    } else if (accessToken) {
+    }
+
+    if (!deleted && accessToken) {
       await prisma.session.deleteMany({ where: { token: accessToken } });
     }
 

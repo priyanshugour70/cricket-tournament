@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { createPlayer, listPlayers } from "@/services/server/players.service";
 
 export async function GET(req: Request) {
@@ -13,6 +14,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireAuth(req);
+  if (!auth.ok) return auth.response;
   const payload = await req.json().catch(() => ({}));
   const result = await createPlayer(payload);
   return NextResponse.json(result.body, { status: result.status });

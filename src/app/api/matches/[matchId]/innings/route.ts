@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { listInnings, createInnings } from "@/services/server/scoring.service";
 
 type Params = { params: Promise<{ matchId: string }> };
@@ -10,6 +11,8 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireAuth(req);
+  if (!auth.ok) return auth.response;
   const { matchId } = await params;
   const payload = await req.json().catch(() => ({}));
   const result = await createInnings(matchId, payload);

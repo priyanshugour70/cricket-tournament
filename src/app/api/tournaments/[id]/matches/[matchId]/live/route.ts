@@ -2,6 +2,10 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Intentionally public — live score streaming is meant for spectators.
+ * No auth required. Only exposes match score data, no PII.
+ */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string; matchId: string }> }) {
   const { matchId } = await params;
 

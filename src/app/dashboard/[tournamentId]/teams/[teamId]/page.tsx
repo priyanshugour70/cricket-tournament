@@ -42,7 +42,9 @@ type TeamData = {
 };
 
 type SquadPlayer = {
-  id: string; teamId: string; playerId: string; playerDisplayName: string;
+  id: string; teamId: string; playerId: string;
+  // `listSquadPlayers` returns `playerName` (not `playerDisplayName`)
+  playerName: string;
   playerRole: string; acquisitionType: string; acquisitionAmount: string | null;
   jerseyNumber: number | null; isCaptain: boolean; isViceCaptain: boolean;
   isOverseas: boolean; isActive: boolean;
@@ -325,7 +327,7 @@ export default function TeamDetailPage() {
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50"
                     onClick={() => router.push(`/dashboard/${tournamentId}/players/${p.playerId}`)}>
                     <TableCell className="font-mono text-xs">{p.jerseyNumber ?? i + 1}</TableCell>
-                    <TableCell className="font-medium">{p.playerDisplayName}</TableCell>
+                    <TableCell className="font-medium">{p.playerName}</TableCell>
                     <TableCell className="text-sm">{p.playerRole.replace(/_/g, " ")}</TableCell>
                     <TableCell><Badge variant="outline" className="text-xs">{p.acquisitionType}</Badge></TableCell>
                     <TableCell className="text-sm">{p.acquisitionAmount ? formatCurrency(p.acquisitionAmount) : "—"}</TableCell>
