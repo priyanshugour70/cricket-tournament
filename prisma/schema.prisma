@@ -229,10 +229,12 @@ model User {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  sessions           Session[]
-  tournamentAccesses UserTournamentAccess[]
-  linkedPlayer       Player?
-  notifications      Notification[]
+  sessions              Session[]
+  tournamentAccesses    UserTournamentAccess[]
+  linkedPlayer          Player?
+  notifications         Notification[]
+  placedAuctionBids     AuctionBid[]           @relation("AuctionBidPlacedBy")
+  finalizedAuctionSales AuctionPlayerSale[]    @relation("AuctionSaleFinalizedBy")
 
   @@index([email])
   @@index([systemRole, isActive])
@@ -348,6 +350,7 @@ model Tournament {
   userAccesses        UserTournamentAccess[]
   settings            TournamentSettings?
   notifications       Notification[]
+  auctionPlayerSales  AuctionPlayerSale[]
 
   @@unique([name, season])
   @@index([status])
@@ -396,6 +399,7 @@ model Team {
   matchesWon    Match[]            @relation("WinningTeam")
   pointsEntries PointsTableEntry[]
   playingXI     MatchPlayingXI[]
+  auctionSales  AuctionPlayerSale[]
 
   @@unique([tournamentId, code])
   @@unique([tournamentId, name])
@@ -447,6 +451,7 @@ model Player {
   playingXI      MatchPlayingXI[]
   ballsAsBatsman BallByBall[]                   @relation("BallBatsman")
   ballsAsBowler  BallByBall[]                   @relation("BallBowler")
+  auctionSales   AuctionPlayerSale[]
 
   @@index([displayName])
   @@index([role])
@@ -507,9 +512,10 @@ model AuctionSeries {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
-  tournament Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  rounds     AuctionRound[]
-  bids       AuctionBid[]
+  tournament     Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  rounds         AuctionRound[]
+  bids           AuctionBid[]
+  playerSales    AuctionPlayerSale[]
 
   @@unique([tournamentId, sequenceNo])
   @@index([tournamentId, status])
@@ -523,6 +529,8 @@ model AuctionRound {
   type            AuctionRoundType
   maxPlayers      Int?
   nominationOrder Json?
+  activePlayerId  String?
+  activeAt        DateTime?
   startsAt        DateTime?
   endsAt          DateTime?
   playersSold     Int              @default(0)
@@ -530,36 +538,73 @@ model AuctionRound {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  auctionSeries AuctionSeries @relation(fields: [auctionSeriesId], references: [id])
+  auctionSeries AuctionSeries       @relation(fields: [auctionSeriesId], references: [id])
   bids          AuctionBid[]
+  playerSales   AuctionPlayerSale[]
 
   @@unique([auctionSeriesId, roundNo])
   @@index([auctionSeriesId, type])
 }
 
 model AuctionBid {
-  id              String   @id @default(cuid())
-  auctionSeriesId String
-  auctionRoundId  String?
-  tournamentId    String
-  teamId          String
-  playerId        String
-  bidAmount       Decimal  @db.Decimal(14, 2)
-  isWinningBid    Boolean  @default(false)
-  isAutoBid       Boolean  @default(false)
-  bidAt           DateTime @default(now())
-  paddleNumber    String?
-  remarks         String?
+  id               String   @id @default(cuid())
+  auctionSeriesId  String
+  auctionRoundId   String?
+  tournamentId     String
+  teamId           String
+  playerId         String
+  bidAmount        Decimal  @db.Decimal(14, 2)
+  isWinningBid     Boolean  @default(false)
+  isAutoBid        Boolean  @default(false)
+  bidAt            DateTime @default(now())
+  paddleNumber     String?
+  remarks          String?
+  /// User account that placed this bid (team manager / admin), for audit trail.
+  placedByUserId   String?
+  placedByUser     User?    @relation("AuctionBidPlacedBy", fields: [placedByUserId], references: [id], onDelete: SetNull)
+  ipAddress        String?
+  userAgent        String?
 
-  auctionSeries AuctionSeries @relation(fields: [auctionSeriesId], references: [id])
-  auctionRound  AuctionRound? @relation(fields: [auctionRoundId], references: [id])
-  team          Team          @relation(fields: [teamId], references: [id])
-  player        Player        @relation(fields: [playerId], references: [id])
-  tournament    Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  auctionSeries AuctionSeries      @relation(fields: [auctionSeriesId], references: [id])
+  auctionRound  AuctionRound?    @relation(fields: [auctionRoundId], references: [id])
+  team          Team             @relation(fields: [teamId], references: [id])
+  player        Player           @relation(fields: [playerId], references: [id])
+  tournament    Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  sale          AuctionPlayerSale?
 
   @@index([auctionSeriesId, playerId, bidAt])
   @@index([teamId, bidAt])
   @@index([tournamentId, isWinningBid])
+  @@index([tournamentId, playerId, bidAt])
+  @@index([placedByUserId, bidAt])
+}
+
+/// Immutable record of a completed sale (winning bid finalized into the squad). Query this for sold-player history.
+model AuctionPlayerSale {
+  id                  String   @id @default(cuid())
+  tournamentId        String
+  auctionSeriesId     String
+  auctionRoundId      String
+  auctionBidId        String   @unique
+  playerId            String
+  teamId              String
+  soldPrice           Decimal  @db.Decimal(14, 2)
+  soldAt              DateTime @default(now())
+  finalizedByUserId   String?
+  remarks             String?
+
+  auctionBid    AuctionBid    @relation(fields: [auctionBidId], references: [id], onDelete: Cascade)
+  tournament    Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  auctionSeries AuctionSeries @relation(fields: [auctionSeriesId], references: [id], onDelete: Cascade)
+  auctionRound  AuctionRound  @relation(fields: [auctionRoundId], references: [id], onDelete: Cascade)
+  team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player        Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  finalizedBy   User?         @relation("AuctionSaleFinalizedBy", fields: [finalizedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tournamentId, soldAt])
+  @@index([tournamentId, teamId])
+  @@index([tournamentId, playerId])
+  @@index([auctionSeriesId, auctionRoundId])
 }
 
 enum LedgerDirection {

@@ -29,8 +29,13 @@ export interface AuctionRoundItem {
   name: string;
   type: string;
   maxPlayers: number | null;
+  activePlayerId: string | null;
+  activeAt: string | null;
   playersSold: number;
   amountSpent: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  nominees: { playerId: string; basePrice: string }[];
 }
 
 export interface CreateAuctionRoundRequest {
@@ -38,6 +43,8 @@ export interface CreateAuctionRoundRequest {
   name: string;
   type: string;
   maxPlayers?: number;
+  /** Players that are eligible for bidding in this round. */
+  playerIds?: string[];
 }
 
 export interface PlaceBidRequest {
@@ -56,14 +63,40 @@ export interface BidItem {
   bidAmount: string;
   isWinningBid: boolean;
   bidAt: string;
+  auctionRoundId: string | null;
+  placedByUserId: string | null;
+  placedByDisplayName: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+}
+
+export interface AuctionSaleItem {
+  id: string;
+  tournamentId: string;
+  auctionSeriesId: string;
+  auctionRoundId: string;
+  auctionBidId: string;
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  teamName: string;
+  teamCode: string | null;
+  soldPrice: string;
+  soldAt: string;
+  finalizedByUserId: string | null;
+  finalizedByDisplayName: string | null;
+  seriesName: string;
+  seriesSequenceNo: number;
+  roundName: string;
+  roundNo: number;
+  roundType: string;
+  winningBidAt: string;
+  isAutoBid: boolean;
+  paddleNumber: string | null;
 }
 
 export interface SellPlayerRequest {
-  playerId: string;
-  teamId: string;
-  soldPrice: number;
-  auctionSeriesId: string;
-  auctionRoundId?: string;
+  auctionBidId: string;
 }
 
 export type ListAuctionSeriesResponse = APIResponse<AuctionSeriesItem[]>;
@@ -71,3 +104,4 @@ export type CreateAuctionSeriesResponse = APIResponse<AuctionSeriesItem>;
 export type ListAuctionRoundsResponse = APIResponse<AuctionRoundItem[]>;
 export type ListBidsResponse = APIResponse<BidItem[]>;
 export type PlaceBidResponse = APIResponse<BidItem>;
+export type ListAuctionSalesResponse = APIResponse<AuctionSaleItem[]>;

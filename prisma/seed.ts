@@ -24,6 +24,7 @@ async function main() {
   await prisma.notification.deleteMany();
   await prisma.emailLog.deleteMany();
   await prisma.pointsTableEntry.deleteMany();
+  await prisma.auctionPlayerSale.deleteMany();
   await prisma.auctionBid.deleteMany();
   await prisma.auctionRound.deleteMany();
   await prisma.auctionSeries.deleteMany();
@@ -450,7 +451,7 @@ async function main() {
       tournamentId: ipl.id,
       name: "IPL 2026 Mega Auction",
       sequenceNo: 1,
-      status: "CLOSED",
+      status: "LIVE",
       startsAt: new Date("2026-01-15T10:00:00Z"),
       endsAt: new Date("2026-01-17T18:00:00Z"),
       minBidIncrement: 25,
@@ -480,16 +481,65 @@ async function main() {
 
   // ── Auction Rounds (4 per series = 8 total) ─────────────────────────────
   const megaR1 = await prisma.auctionRound.create({
-    data: { auctionSeriesId: megaAuction.id, roundNo: 1, name: "Marquee Round", type: "MARQUEE", maxPlayers: 10, playersSold: 6, amountSpent: 5600, startsAt: new Date("2026-01-15T10:00:00Z"), endsAt: new Date("2026-01-15T16:00:00Z") },
+    data: {
+      auctionSeriesId: megaAuction.id,
+      roundNo: 1,
+      name: "Marquee Round",
+      type: "MARQUEE",
+      maxPlayers: 10,
+      playersSold: 6,
+      amountSpent: 5600,
+      startsAt: new Date("2026-01-15T10:00:00Z"),
+      endsAt: new Date("2026-01-15T16:00:00Z"),
+      nominationOrder: [
+        { playerId: players[13]!.id, basePrice: String(playerDefs[13]!.base) },
+        { playerId: players[17]!.id, basePrice: String(playerDefs[17]!.base) },
+      ],
+    },
   });
   const megaR2 = await prisma.auctionRound.create({
-    data: { auctionSeriesId: megaAuction.id, roundNo: 2, name: "Capped Players", type: "CAPPED", maxPlayers: 20, playersSold: 8, amountSpent: 2650, startsAt: new Date("2026-01-16T10:00:00Z"), endsAt: new Date("2026-01-16T18:00:00Z") },
+    data: {
+      auctionSeriesId: megaAuction.id,
+      roundNo: 2,
+      name: "Capped Players",
+      type: "CAPPED",
+      maxPlayers: 20,
+      playersSold: 8,
+      amountSpent: 2650,
+      startsAt: new Date("2026-01-16T10:00:00Z"),
+      endsAt: new Date("2026-01-16T18:00:00Z"),
+      nominationOrder: [],
+    },
   });
   const megaR3 = await prisma.auctionRound.create({
-    data: { auctionSeriesId: megaAuction.id, roundNo: 3, name: "Uncapped Players", type: "UNCAPPED", maxPlayers: 30, playersSold: 4, amountSpent: 1000, startsAt: new Date("2026-01-17T10:00:00Z"), endsAt: new Date("2026-01-17T14:00:00Z") },
+    data: {
+      auctionSeriesId: megaAuction.id,
+      roundNo: 3,
+      name: "Uncapped Players",
+      type: "UNCAPPED",
+      maxPlayers: 30,
+      playersSold: 4,
+      amountSpent: 1000,
+      startsAt: new Date("2026-01-17T10:00:00Z"),
+      endsAt: new Date("2026-01-17T14:00:00Z"),
+      nominationOrder: [
+        { playerId: players[19]!.id, basePrice: String(playerDefs[19]!.base) },
+      ],
+    },
   });
   const megaR4 = await prisma.auctionRound.create({
-    data: { auctionSeriesId: megaAuction.id, roundNo: 4, name: "Accelerated Round", type: "ACCELERATED", maxPlayers: 15, playersSold: 6, amountSpent: 3150, startsAt: new Date("2026-01-17T14:30:00Z"), endsAt: new Date("2026-01-17T18:00:00Z") },
+    data: {
+      auctionSeriesId: megaAuction.id,
+      roundNo: 4,
+      name: "Accelerated Round",
+      type: "ACCELERATED",
+      maxPlayers: 15,
+      playersSold: 6,
+      amountSpent: 3150,
+      startsAt: new Date("2026-01-17T14:30:00Z"),
+      endsAt: new Date("2026-01-17T18:00:00Z"),
+      nominationOrder: [],
+    },
   });
 
   await prisma.auctionRound.create({
@@ -556,6 +606,22 @@ async function main() {
   ];
 
   await Promise.all(bidData.map((b) => prisma.auctionBid.create({ data: b })));
+
+  const winningBids = await prisma.auctionBid.findMany({
+    where: { tournamentId: ipl.id, isWinningBid: true, auctionRoundId: { not: null } },
+  });
+  await prisma.auctionPlayerSale.createMany({
+    data: winningBids.map((b) => ({
+      tournamentId: b.tournamentId,
+      auctionSeriesId: b.auctionSeriesId,
+      auctionRoundId: b.auctionRoundId as string,
+      auctionBidId: b.id,
+      playerId: b.playerId,
+      teamId: b.teamId,
+      soldPrice: b.bidAmount,
+      soldAt: b.bidAt,
+    })),
+  });
 
   // ── TeamSquadPlayers (3-4 per team = 27) ────────────────────────────────
   // Assignments: MI[0,5,22], CSK[1,4,23], RCB[2,8,21], KKR[3,11,24],
